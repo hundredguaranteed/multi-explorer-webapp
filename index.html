@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stat Explorers</title>
+  <meta name="description" content="D1, D2, NAIA, JUCO, FIBA, and NBA stat explorers in one basic webapp.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-topline">
+      <a class="site-eyebrow topline-link" href="#home">Home</a>
+    </div>
+    <div class="site-header__inner">
+      <h1 id="pageTitle">100guaranteed</h1>
+    </div>
+    <p class="site-subtitle" id="pageSubtitle"></p>
+    <nav class="league-nav" id="leagueNav" aria-label="Explorer pages"></nav>
+  </header>
+
+  <div class="status-bar">
+    <div class="status-pill" id="statusPill">Preparing data</div>
+    <div class="status-summary" id="filtersSummary"></div>
+  </div>
+
+  <div class="app-shell">
+    <aside class="query-panel" id="queryPanel">
+      <section class="panel-section">
+        <div class="section-header-row">
+          <h2>View</h2>
+        </div>
+        <div class="select-stack" id="viewModeFilters"></div>
+      </section>
+
+      <section class="panel-section">
+        <div class="section-header-row">
+          <h2>Years</h2>
+          <div class="bulk-actions">
+            <button class="link-button" id="selectAllYearsBtn" type="button">All</button>
+            <button class="link-button" id="selectLatestYearBtn" type="button">Latest</button>
+            <button class="link-button" id="clearYearsBtn" type="button">None</button>
+          </div>
+        </div>
+        <div class="pill-grid" id="yearPills"></div>
+      </section>
+
+      <section class="panel-section">
+        <div class="section-header-row">
+          <h2>Search</h2>
+        </div>
+        <div class="field-stack field-stack--compact">
+          <label class="field-label" for="searchInput">Player / Team</label>
+          <input class="form-control" id="searchInput" type="text" placeholder="Start typing">
+        </div>
+        <div class="field-stack field-stack--compact field-stack--inline">
+          <label class="field-label" for="teamSelect">Team</label>
+          <select class="form-control" id="teamSelect">
+            <option value="all">All teams</option>
+          </select>
+        </div>
+        <div class="select-stack" id="singleSelectFilters"></div>
+        <div class="multi-filter-stack" id="multiSelectFilters"></div>
+        <div class="embedded-demo-controls" id="demoControls">
+          <div class="section-header-row section-header-row--inline">
+            <div class="bulk-actions">
+              <button class="link-button" id="demoDefaultsBtn" type="button">Default</button>
+              <button class="link-button" id="demoAllBtn" type="button">All</button>
+              <button class="link-button" id="demoClearBtn" type="button">Clear</button>
+            </div>
+          </div>
+          <div class="pill-grid" id="demoToggles"></div>
+          <div class="demo-range-grid" id="demoRangeFilters"></div>
+        </div>
+      </section>
+
+      <section class="panel-section">
+        <div class="section-header-row">
+          <h2>Stat Filters</h2>
+          <div class="bulk-actions">
+            <button class="link-button" id="statDefaultsBtn" type="button">Default</button>
+            <button class="link-button" id="statAllBtn" type="button">All</button>
+            <button class="link-button" id="statNoneBtn" type="button">None</button>
+            <button class="link-button" id="statClearBtn" type="button">Clear</button>
+          </div>
+        </div>
+        <div id="statGroups"></div>
+      </section>
+    </aside>
+
+    <main class="table-area">
+      <section class="home-content" id="homeContent" hidden></section>
+      <section class="table-content" id="tableContent">
+        <div class="table-toolbar">
+          <div class="finder-topbar">
+            <div class="finder-year-row">
+              <select class="finder-year-select" id="yearQuickSelect"></select>
+            </div>
+            <div class="finder-query" id="finderQuery"></div>
+            <div class="finder-title" id="finderTitle"></div>
+          </div>
+          <div>
+            <div class="results-count" id="resultsCount">Loading dataset...</div>
+            <div class="results-subtitle" id="resultsSubtitle"></div>
+          </div>
+        </div>
+
+        <div class="table-wrapper" id="tableWrapper">
+          <table id="statsTable">
+            <thead id="statsTableHead"></thead>
+            <tbody id="statsTableBody"></tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <button class="link-button load-more-link" id="loadMoreBtn" type="button" hidden>Add 40 More</button>
+          <div class="table-legend" id="tableLegend"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="statGroupTemplate">
+    <section class="stat-group">
+      <div class="stat-group__header"></div>
+      <div class="stat-group__body"></div>
+    </section>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
