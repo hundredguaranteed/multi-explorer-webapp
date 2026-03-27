@@ -402,6 +402,7 @@ a,
   margin: 0 auto;
   width: min(var(--table-frame-width, var(--table-max-width)), 100%);
   max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 #statsTable {
@@ -563,5 +564,171 @@ a,
   .table-area {
     width: min(100%, 1180px);
     max-width: min(100%, 1180px);
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --shell-gap: 14px;
+  }
+
+  body {
+    font-size: 13px;
+    line-height: 1.28;
+  }
+
+  .site-header {
+    padding: 8px 10px 0;
+  }
+
+  .site-topline,
+  .site-header__inner,
+  .league-nav {
+    gap: 10px;
+  }
+
+  #pageTitle {
+    font-size: 20px;
+  }
+
+  .status-bar {
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 10px 0;
+  }
+
+  .app-shell {
+    gap: 16px;
+    padding: 8px 10px 18px;
+  }
+
+  .query-panel {
+    gap: 12px;
+    justify-self: stretch;
+    font-size: 11px;
+  }
+
+  .section-header-row {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 10px;
+  }
+
+  .section-header-row h2 {
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .bulk-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 8px;
+  }
+
+  .field-stack--compact,
+  .field-stack--inline {
+    max-width: none;
+  }
+
+  .field-stack--inline {
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .pill-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  #viewModeFilters .pill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .multi-pill-group .pill-grid {
+    gap: 5px;
+  }
+
+  .multi-pill-group .pill-toggle {
+    flex: 1 1 calc(25% - 5px);
+    min-width: 52px;
+  }
+
+  .demo-range-item,
+  .filter-row {
+    grid-template-columns: minmax(0, 1fr) 54px 54px;
+    gap: 4px;
+    justify-content: stretch;
+  }
+
+  .demo-range-label,
+  .filter-row__label {
+    font-size: 10px;
+    line-height: 1.1;
+  }
+
+  .table-area {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .table-content,
+  .table-wrapper,
+  .table-footer {
+    width: 100%;
+  }
+
+  .table-toolbar {
+    margin-bottom: 6px;
+  }
+
+  .finder-title {
+    font-size: 16px;
+    line-height: 1.15;
+  }
+
+  .finder-query {
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+
+  .finder-year-select {
+    width: 100%;
+    max-width: 220px;
+  }
+
+  .table-legend {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 12px;
+  }
+
+  .site-eyebrow,
+  .league-link,
+  .status-pill,
+  .status-summary,
+  .results-subtitle {
+    font-size: 11px;
+  }
+
+  .pill-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .multi-pill-group .pill-toggle {
+    flex: 1 1 calc(33.333% - 5px);
+  }
+
+  .demo-range-item,
+  .filter-row {
+    grid-template-columns: minmax(0, 1fr) 50px 50px;
+  }
+
+  .load-more-link {
+    font-size: 13px;
   }
 }

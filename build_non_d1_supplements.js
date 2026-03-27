@@ -13,6 +13,7 @@ const OUTPUT_DIRS = {
   juco: path.join(OUTPUT_ROOT, "juco"),
   fiba: path.join(OUTPUT_ROOT, "fiba"),
 };
+const SHOT_PROFILE_COLUMNS = ["rim_made", "rim_att", "rim_pct", "mid_made", "mid_att", "mid_pct"];
 
 const TEAM_STATE_TOKENS = new Set([
   "al", "ak", "ar", "az", "ca", "cal", "calif", "co", "colo", "ct", "de", "fl", "fla", "ga", "hi", "ia", "id", "il", "ill", "in", "ind",
@@ -158,9 +159,11 @@ const DATASET_SOURCES = {
 function main() {
   const output = { rim: { d2: {}, naia: {}, juco: {}, fiba: {} } };
   const summary = {};
+  const sourceRows = {};
 
   Object.entries(DATASET_SOURCES).forEach(([datasetId, config]) => {
     const rows = loadCsvRows(config.inputFile, config.globalName);
+    sourceRows[datasetId] = rows;
     const index = buildRowIndex(rows, datasetId, config);
     const availableSeasons = Array.from(new Set(rows.map((row) => getStringValue(row.season).trim()).filter(Boolean))).sort(compareSeasons);
     const stats = datasetId === "fiba"
@@ -196,11 +199,18 @@ function main() {
     stats.fileCount = seasons.length;
   });
 
+  Object.entries(DATASET_SOURCES).forEach(([datasetId, config]) => {
+    writeMergedDatasetBundle(datasetId, config, sourceRows[datasetId], output.rim[datasetId]);
+  });
+
   Object.entries(summary).forEach(([datasetId, stats]) => {
     console.log(`${datasetId}: matched ${stats.matched}/${stats.total} rim rows (${stats.skippedAmbiguous} ambiguous, ${stats.skippedMissing} missing)`);
   });
   Object.entries(OUTPUT_DIRS).forEach(([datasetId, dirPath]) => {
     console.log(`wrote ${datasetId} supplement shards -> ${path.relative(ROOT, dirPath)} (${summary[datasetId].fileCount} files)`);
+  });
+  Object.entries(DATASET_SOURCES).forEach(([datasetId, config]) => {
+    console.log(`rewrote ${datasetId} base bundle -> ${path.relative(ROOT, config.inputFile)}`);
   });
 }
 
@@ -273,6 +283,40 @@ function loadCsvRows(filePath, globalName) {
   const raw = context.window[globalName] ?? "";
   const csvText = Array.isArray(raw) ? raw.join("\n") : String(raw);
   return parseCSV(csvText);
+}
+
+function writeMergedDatasetBundle(datasetId, config, rows, seasonBuckets) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  rows.forEach((row) => {
+    const season = getStringValue(row.season).trim();
+    const supplement = seasonBuckets?.[season]?.[config.rowKey(row)] || null;
+    SHOT_PROFILE_COLUMNS.forEach((column) => {
+      if (!Object.prototype.hasOwnProperty.call(row, column)) row[column] = "";
+      if (supplement && supplement[column] !== undefined && supplement[column] !== "") {
+        row[column] = supplement[column];
+      }
+    });
+  });
+  const columns = [
+    ...Object.keys(rows[0]),
+    ...SHOT_PROFILE_COLUMNS.filter((column) => !Object.prototype.hasOwnProperty.call(rows[0], column)),
+  ];
+  const csvText = stringifyCSV(rows, columns);
+  fs.writeFileSync(config.inputFile, `window.${config.globalName} = ${JSON.stringify(csvText)};\n`, "utf8");
+}
+
+function stringifyCSV(rows, columns) {
+  const lines = [columns.join(",")];
+  rows.forEach((row) => {
+    lines.push(columns.map((column) => escapeCsvValue(row[column])).join(","));
+  });
+  return lines.join("\n");
+}
+
+function escapeCsvValue(value) {
+  const text = getStringValue(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, "\"\"")}"`;
+  return text;
 }
 
 function parseCSV(text) {
