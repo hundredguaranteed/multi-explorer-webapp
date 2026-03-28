@@ -302,6 +302,10 @@ a,
   background: var(--active-fill);
 }
 
+.pill-toggle.is-unloaded {
+  opacity: 0.65;
+}
+
 .demo-range-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

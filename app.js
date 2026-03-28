@@ -491,6 +491,9 @@ function buildD1Config() {
     title: "D1",
     subtitle: "",
     dataScript: "data/d1_enriched_all_seasons.js",
+    mobileDataManifestScript: "data/vendor/d1_year_manifest.js",
+    mobileDataScriptTemplate: "data/vendor/d1_year_chunks/{season}.js",
+    mobileInitialYears: 1,
     deferredExtraScripts: [
       "data/vendor/d1_frontend_data.js",
       "data/vendor/d1_drives.js",
@@ -1426,12 +1429,19 @@ function wireGlobalEvents() {
     renderCurrentDataset();
   });
 
-  elements.selectAllYearsBtn.addEventListener("click", () => {
+  elements.selectAllYearsBtn.addEventListener("click", async () => {
     const state = getCurrentUiState();
     const dataset = getCurrentDataset();
     if (!state || !dataset) return;
-    state.years = new Set(dataset.meta.years);
-    renderCurrentDataset();
+    try {
+      const years = getAvailableYears(dataset);
+      await ensureDatasetYearsLoaded(dataset, years);
+      state.years = new Set(years);
+      renderCurrentDataset();
+    } catch (error) {
+      elements.statusPill.textContent = `${dataset.navLabel} load failed`;
+      elements.resultsSubtitle.textContent = getStringValue(error?.message || error);
+    }
   });
 
   elements.selectLatestYearBtn.addEventListener("click", () => {
@@ -1724,6 +1734,7 @@ function scheduleStatusAnnotations(datasetId) {
   const dataset = appState.datasetCache[datasetId];
   const state = appState.uiState[datasetId];
   if (!dataset || dataset._statusAnnotated || !dataset.singleFilters?.some((filter) => filter.id === "status_path")) return;
+  if (dataset.id === "d1" && isMobileLiteD1Dataset(dataset)) return;
   if (getStringValue(state?.extraSelects?.status_path) && getStringValue(state?.extraSelects?.status_path) !== "all") return;
   scheduleBackgroundTask(`status:${datasetId}`, async () => {
     if (appState.currentId !== datasetId) return;
@@ -1858,8 +1869,13 @@ async function ensureDatasetHydrated(datasetId) {
 
 async function ensureDatasetLoaded(datasetId, options = {}) {
   if (appState.datasetCache[datasetId]) {
+    const cached = appState.datasetCache[datasetId];
+    if (datasetId === "d1" && isMobileLiteD1Dataset(cached) && options.requireHydrated) {
+      await upgradeMobileD1Dataset(cached, options);
+      return appState.datasetCache[datasetId];
+    }
     if (options.requireHydrated) await ensureDatasetHydrated(datasetId);
-    return appState.datasetCache[datasetId];
+    return cached;
   }
 
   if (datasetId === "nba_companion") {
@@ -1873,30 +1889,53 @@ async function ensureDatasetLoaded(datasetId, options = {}) {
   if (options.requireHydrated && supportsDeferredHydration(config)) {
     await Promise.all((config.deferredExtraScripts || []).map((src) => loadScriptOnce(src)));
   }
-  await loadScriptOnce(config.dataScript);
-  const rawPayload = window[config.globalName] ?? "";
-  const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
-  const rows = parseCSV(csvText);
-  let normalized = normalizeRows(rows, datasetId);
-  if (config.minYear) {
-    normalized = normalized.filter((row) => {
-      const season = Number(row[config.yearColumn]);
-      return Number.isFinite(season) ? season >= config.minYear : true;
-    });
+  let useMobileLite = datasetId === "d1" && isCompactViewport() && !options.requireHydrated && config.mobileDataScriptTemplate;
+  let rows;
+  let availableYears = [];
+  try {
+    if (useMobileLite) {
+      await loadScriptOnce(config.mobileDataManifestScript);
+      availableYears = getD1AvailableYears(config);
+      const initialYears = getD1InitialYears(config);
+      if (!initialYears.length) {
+        await loadScriptOnce(config.dataScript);
+        const rawPayload = window[config.globalName] ?? "";
+        const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
+        rows = parseDatasetRows(csvText, datasetId, config, options);
+        availableYears = Array.from(new Set(rows.map((row) => getStringValue(row[config.yearColumn])).filter(Boolean))).sort(compareYears);
+      } else {
+        rows = [];
+        const initialDataset = { id: datasetId, rows, _loadedYears: new Set() };
+        await loadD1RowsForYears(initialDataset, config, initialYears, options);
+        rows = initialDataset.rows;
+        availableYears = getD1AvailableYears(config);
+      }
+    } else {
+      await loadScriptOnce(config.dataScript);
+      const rawPayload = window[config.globalName] ?? "";
+      const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
+      rows = parseDatasetRows(csvText, datasetId, config, options);
+    }
+  } catch (error) {
+    if (!useMobileLite) throw error;
+    useMobileLite = false;
+    await loadScriptOnce(config.dataScript);
+    const rawPayload = window[config.globalName] ?? "";
+    const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
+    rows = parseDatasetRows(csvText, datasetId, config, options);
   }
   const deferredHydrationMode = supportsDeferredHydration(config) && !options.requireHydrated
     ? (config.deferredHydrationMode || "full")
     : "";
   const deferHydration = Boolean(deferredHydrationMode);
-  if (!config.precomputed && deferredHydrationMode !== "full") {
-    enrichDatasetRows(normalized, datasetId);
-    normalized.forEach((row) => {
-      normalizePercentLikeColumns(row, datasetId);
-    });
+  rows = finalizeDatasetRows(rows, config);
+  const meta = buildDatasetMeta(rows, config);
+  const dataset = { ...config, rows, meta, _hydrated: !deferHydration, _hydrationPending: deferHydration };
+  dataset._loadedYears = new Set(meta.years);
+  if (datasetId === "d1" && useMobileLite) {
+    dataset._mobileLite = true;
+    dataset.availableYears = availableYears.length ? availableYears : meta.years;
   }
-  normalized = reapplyDatasetPostProcessing(normalized, config);
-  const meta = buildDatasetMeta(normalized, config);
-  const dataset = { ...config, rows: normalized, meta, _hydrated: !deferHydration, _hydrationPending: deferHydration };
   appState.datasetCache[datasetId] = dataset;
   if (options.requireHydrated) {
     await ensureDatasetHydrated(datasetId);
@@ -1913,7 +1952,7 @@ async function ensureNbaCompanionDataset() {
   }
 
   const config = DATASETS.nba_companion;
-  const [d1Dataset, nbaDataset] = await Promise.all([ensureDatasetLoaded("d1"), ensureDatasetLoaded("nba")]);
+  const [d1Dataset, nbaDataset] = await Promise.all([ensureDatasetLoaded("d1", { requireHydrated: true }), ensureDatasetLoaded("nba")]);
   const graph = buildStatusGraph([d1Dataset, nbaDataset]);
   const rows = buildNbaCompanionRows(d1Dataset, nbaDataset, graph);
   const meta = buildDatasetMeta(rows, config);
@@ -1998,6 +2037,140 @@ function loadScriptOnce(src) {
   return promise;
 }
 
+function isCompactViewport() {
+  return Boolean(window.matchMedia && window.matchMedia("(max-width: 860px)").matches);
+}
+
+function getAvailableYears(dataset) {
+  if (Array.isArray(dataset?.availableYears) && dataset.availableYears.length) return dataset.availableYears;
+  if (Array.isArray(dataset?.meta?.years) && dataset.meta.years.length) return dataset.meta.years;
+  return [];
+}
+
+function getD1Manifest() {
+  return window.D1_YEAR_MANIFEST || null;
+}
+
+function getD1AvailableYears(config) {
+  const manifestYears = getD1Manifest()?.years;
+  if (Array.isArray(manifestYears) && manifestYears.length) return manifestYears;
+  return Array.isArray(config?.availableYears) ? config.availableYears : [];
+}
+
+function getD1InitialYears(config) {
+  const years = getD1AvailableYears(config);
+  if (!years.length) return [];
+  const count = Math.max(1, Number(config?.mobileInitialYears) || 1);
+  return years.slice(-count);
+}
+
+function getD1YearChunkPath(config, season) {
+  if (!config?.mobileDataScriptTemplate) return "";
+  return config.mobileDataScriptTemplate.replace("{season}", sanitizeDeferredSeasonKey(season));
+}
+
+function getLoadedYearSet(dataset) {
+  if (!dataset._loadedYears) dataset._loadedYears = new Set();
+  return dataset._loadedYears;
+}
+
+function parseDatasetRows(csvText, datasetId, config, options = {}) {
+  const rows = parseCSV(csvText);
+  let normalized = normalizeRows(rows, datasetId);
+  if (config.minYear) {
+    normalized = normalized.filter((row) => {
+      const season = Number(row[config.yearColumn]);
+      return Number.isFinite(season) ? season >= config.minYear : true;
+    });
+  }
+  const deferredHydrationMode = supportsDeferredHydration(config) && !options.requireHydrated
+    ? (config.deferredHydrationMode || "full")
+    : "";
+  if (!config.precomputed && deferredHydrationMode !== "full") {
+    enrichDatasetRows(normalized, datasetId);
+    normalized.forEach((row) => normalizePercentLikeColumns(row, datasetId));
+  }
+  return normalized;
+}
+
+function finalizeDatasetRows(rows, config) {
+  return reapplyDatasetPostProcessing(rows, config);
+}
+
+function isMobileLiteD1Dataset(dataset) {
+  return Boolean(dataset?.id === "d1" && dataset?._mobileLite);
+}
+
+async function loadD1RowsForYears(dataset, config, years, options = {}) {
+  const targetYears = Array.from(new Set((years || []).map((season) => getStringValue(season).trim()).filter(Boolean)));
+  if (!targetYears.length) return dataset;
+  if (!dataset._d1RowLoads) dataset._d1RowLoads = new Map();
+  if (!dataset._loadedYears) dataset._loadedYears = new Set();
+
+  const rowsToAppend = [];
+  for (const season of targetYears) {
+    if (dataset._loadedYears.has(season)) continue;
+    if (!dataset._d1RowLoads.has(season)) {
+      const promise = (async () => {
+        const src = getD1YearChunkPath(config, season);
+        if (!src) throw new Error(`Missing D1 chunk for ${season}`);
+        await loadScriptOnce(src);
+        const chunkMap = window.D1_YEAR_CSV_CHUNKS || {};
+        const csvText = chunkMap[season];
+        if (!csvText) throw new Error(`Missing D1 rows for ${season}`);
+        return parseDatasetRows(csvText, dataset.id, config, options);
+      })();
+      dataset._d1RowLoads.set(season, promise);
+    }
+    const rows = await dataset._d1RowLoads.get(season);
+    rowsToAppend.push(...rows);
+    dataset._loadedYears.add(season);
+    dataset._d1RowLoads.delete(season);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  if (!rowsToAppend.length) return dataset;
+  const mergedRows = dataset.rows.concat(rowsToAppend);
+  dataset.rows = finalizeDatasetRows(mergedRows, config);
+  dataset.meta = buildDatasetMeta(dataset.rows, config);
+  invalidateDatasetDerivedCaches(dataset.id);
+  return dataset;
+}
+
+async function upgradeMobileD1Dataset(dataset, options = {}) {
+  if (!dataset || dataset.id !== "d1" || !dataset._mobileLite) return dataset;
+  const config = DATASETS.d1;
+  if (config.extraScripts?.length) {
+    await Promise.all(config.extraScripts.map((src) => loadScriptOnce(src)));
+  }
+  if (options.requireHydrated && supportsDeferredHydration(config)) {
+    await Promise.all((config.deferredExtraScripts || []).map((src) => loadScriptOnce(src)));
+  }
+  await loadScriptOnce(config.dataScript);
+  const rawPayload = window[config.globalName] ?? "";
+  const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
+  const rows = finalizeDatasetRows(parseDatasetRows(csvText, dataset.id, config, options), config);
+  dataset.rows = rows;
+  dataset.meta = buildDatasetMeta(rows, config);
+  dataset.availableYears = getD1AvailableYears(config);
+  dataset._loadedYears = new Set(dataset.meta.years);
+  dataset._mobileLite = false;
+  dataset._hydrated = Boolean(!supportsDeferredHydration(config) || options.requireHydrated);
+  dataset._hydrationPending = supportsDeferredHydration(config) && !options.requireHydrated;
+  invalidateDatasetDerivedCaches(dataset.id);
+  return dataset;
+}
+
+async function ensureDatasetYearsLoaded(dataset, years, options = {}) {
+  if (!dataset || dataset.id !== "d1" || !isMobileLiteD1Dataset(dataset)) return dataset;
+  const targetYears = Array.from(new Set((years || []).map((season) => getStringValue(season).trim()).filter(Boolean)));
+  const missingYears = targetYears.filter((season) => !getLoadedYearSet(dataset).has(season));
+  if (!missingYears.length) return dataset;
+  elements.statusPill.textContent = `Loading ${dataset.navLabel} ${missingYears.join(" / ")}`;
+  await loadD1RowsForYears(dataset, DATASETS.d1, missingYears, options);
+  return dataset;
+}
+
 function enrichDatasetRows(rows, datasetId) {
   if (datasetId === "d1") enrichD1Rows(rows);
   if (datasetId === "naia") enrichNaiaRows(rows);
@@ -2016,7 +2189,9 @@ async function ensureStatusAnnotations(datasetId) {
   }
 
   const promise = (async () => {
-    const source = appState.datasetCache[datasetId] || await ensureDatasetLoaded(datasetId);
+    const source = datasetId === "d1" && isMobileLiteD1Dataset(appState.datasetCache[datasetId])
+      ? await ensureDatasetLoaded(datasetId, { requireHydrated: true })
+      : (appState.datasetCache[datasetId] || await ensureDatasetLoaded(datasetId, datasetId === "d1" ? { requireHydrated: true } : {}));
     const precomputed = await loadPrecomputedStatusAnnotations();
     if (applyPrecomputedStatusAnnotations(source, precomputed)) {
       source.meta = buildDatasetMeta(source.rows, source);
@@ -2025,7 +2200,7 @@ async function ensureStatusAnnotations(datasetId) {
     const requiredIds = datasetId === "d1"
       ? ["d1", "d2", "naia", "juco", "nba"]
       : [datasetId, "d1", "nba"];
-    const datasets = await Promise.all(requiredIds.map((id) => ensureDatasetLoaded(id)));
+    const datasets = await Promise.all(requiredIds.map((id) => ensureDatasetLoaded(id, id === "d1" ? { requireHydrated: true } : {})));
     const graph = buildStatusGraph(datasets);
     const fallbackSource = datasets.find((dataset) => dataset.id === datasetId);
     annotateStatusFlags(fallbackSource, graph);
@@ -4021,23 +4196,32 @@ function renderFilters(dataset, state) {
 }
 
 function renderYearPills(dataset, state) {
-  elements.yearPills.innerHTML = dataset.meta.years
+  const years = getAvailableYears(dataset);
+  const loadedYears = getLoadedYearSet(dataset);
+  elements.yearPills.innerHTML = years
     .map((year) => {
       const active = state.years.has(year) ? "is-active" : "";
-      return `<button class="pill-toggle ${active}" data-year="${escapeHtml(year)}" type="button">${escapeHtml(year)}</button>`;
+      const loaded = loadedYears.has(year) ? "" : " is-unloaded";
+      return `<button class="pill-toggle ${active}${loaded}" data-year="${escapeHtml(year)}" type="button">${escapeHtml(year)}</button>`;
     })
     .join("");
 
   elements.yearPills.querySelectorAll("[data-year]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       const year = button.dataset.year;
       if (!year) return;
-      if (state.years.has(year)) {
-        state.years.delete(year);
-      } else {
-        state.years.add(year);
+      try {
+        if (state.years.has(year)) {
+          state.years.delete(year);
+        } else {
+          await ensureDatasetYearsLoaded(dataset, [year]);
+          state.years.add(year);
+        }
+        renderCurrentDataset();
+      } catch (error) {
+        elements.statusPill.textContent = `${dataset.navLabel} load failed`;
+        elements.resultsSubtitle.textContent = getStringValue(error?.message || error);
       }
-      renderCurrentDataset();
     });
   });
 }
@@ -4099,23 +4283,30 @@ function renderExtraFilters(dataset, state) {
 
   elements.singleSelectFilters.querySelectorAll("[data-single-filter]").forEach((select) => {
     select.addEventListener("change", async () => {
-      const filterId = select.dataset.singleFilter;
-      state.extraSelects[filterId] = select.value;
-      if (filterId === "view_mode") {
-        state.team = "all";
-        if (select.value === "career") {
-          state.years = new Set(dataset.meta.years);
+      try {
+        const filterId = select.dataset.singleFilter;
+        state.extraSelects[filterId] = select.value;
+        if (filterId === "view_mode") {
+          state.team = "all";
+          if (select.value === "career") {
+            const years = getAvailableYears(dataset);
+            await ensureDatasetYearsLoaded(dataset, years);
+            state.years = new Set(years);
+          }
         }
-      }
-      if (filterId === "status_path" && select.value !== "all") {
-        if (!dataset._statusAnnotated) {
-          elements.statusPill.textContent = `Loading ${dataset.navLabel} status`;
-          await ensureStatusAnnotations(dataset.id);
-          if (appState.currentId !== dataset.id) return;
-          resetUiCaches(state);
+        if (filterId === "status_path" && select.value !== "all") {
+          if (!dataset._statusAnnotated) {
+            elements.statusPill.textContent = `Loading ${dataset.navLabel} status`;
+            await ensureStatusAnnotations(dataset.id);
+            if (appState.currentId !== dataset.id) return;
+            resetUiCaches(state);
+          }
         }
+        renderCurrentDataset();
+      } catch (error) {
+        elements.statusPill.textContent = `${dataset.navLabel} load failed`;
+        elements.resultsSubtitle.textContent = getStringValue(error?.message || error);
       }
-      renderCurrentDataset();
     });
   });
 
@@ -5295,18 +5486,26 @@ function renderFinderBar(dataset, state) {
   if (!elements.finderTitle || !elements.finderQuery || !elements.yearQuickSelect) return;
   const selectedYears = Array.from(state.years).sort(compareYears);
   const singleYear = selectedYears.length === 1 ? selectedYears[0] : "all";
+  const years = getAvailableYears(dataset);
   elements.yearQuickSelect.innerHTML = [
     '<option value="all">All years</option>',
-    ...dataset.meta.years.map((year) => `<option value="${escapeAttribute(year)}"${singleYear === year ? " selected" : ""}>${escapeHtml(year)}</option>`),
+    ...years.map((year) => `<option value="${escapeAttribute(year)}"${singleYear === year ? " selected" : ""}>${escapeHtml(year)}</option>`),
   ].join("");
   const yearLabel = singleYear === "all" ? "All Years" : singleYear;
   elements.finderTitle.textContent = `${yearLabel} ${dataset.navLabel} Player Finder`;
   elements.finderQuery.textContent = buildFinderQueryText(dataset, state);
 
-  elements.yearQuickSelect.onchange = () => {
+  elements.yearQuickSelect.onchange = async () => {
     const value = elements.yearQuickSelect.value;
-    state.years = value === "all" ? new Set(dataset.meta.years) : new Set([value]);
-    renderCurrentDataset();
+    const targetYears = value === "all" ? years : [value];
+    try {
+      await ensureDatasetYearsLoaded(dataset, targetYears);
+      state.years = value === "all" ? new Set(targetYears) : new Set([value]);
+      renderCurrentDataset();
+    } catch (error) {
+      elements.statusPill.textContent = `${dataset.navLabel} load failed`;
+      elements.resultsSubtitle.textContent = getStringValue(error?.message || error);
+    }
   };
 }
 
