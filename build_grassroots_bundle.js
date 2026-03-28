@@ -130,7 +130,7 @@ function parseAgeRange(eventName, teamName) {
     const match = text.match(/\b(\d{1,2}U)\b/i);
     if (match) return match[1].toUpperCase();
   }
-  return "";
+  return "17U";
 }
 
 function ageSortValue(ageRange) {
@@ -223,7 +223,8 @@ function aggregateGroup(group) {
   });
 
   output.season = firstNonEmpty(group, "season");
-  output.age_range = firstNonEmpty(group, "age_range");
+  output.age_range = firstNonEmpty(group, "age_range") || "17U";
+  output.level = output.age_range || "17U";
   output.circuit = uniqueJoined(group, "circuit");
   output.player_name = firstNonEmpty(group, "player_name");
   output.team_name = firstNonEmpty(group, "team_name");
@@ -249,6 +250,7 @@ function aggregateGroup(group) {
   output.fg_pct = Number.isFinite(output.fgm) && Number.isFinite(output.fga) && output.fga > 0 ? ratio(output.fgm, output.fga) : "";
   output["2p_pct"] = Number.isFinite(output["2pm"]) && Number.isFinite(output["2pa"]) && output["2pa"] > 0 ? ratio(output["2pm"], output["2pa"]) : "";
   output.tp_pct = Number.isFinite(output.tpm) && Number.isFinite(output.tpa) && output.tpa > 0 ? ratio(output.tpm, output.tpa) : "";
+  output.three_pr = Number.isFinite(output.tpa) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.tpa / output.fga, 3) : "";
   output.tpm_pg = Number.isFinite(output.tpm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpm / output.gp, 1) : "";
   output.tpa_pg = Number.isFinite(output.tpa) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpa / output.gp, 1) : "";
   output.ftm = Number.isFinite(output.pts) && Number.isFinite(output["2pm"]) && Number.isFinite(output.tpm)
@@ -256,6 +258,11 @@ function aggregateGroup(group) {
     : "";
   output.ftm_pg = Number.isFinite(output.ftm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.ftm / output.gp, 1) : "";
   output.ftm_fga = Number.isFinite(output.ftm) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.ftm / output.fga, 2) : "";
+  output.three_pr_plus_ftm_fga = Number.isFinite(output.three_pr) && Number.isFinite(output.ftm_fga)
+    ? round(output.three_pr + output.ftm_fga, 3)
+    : "";
+  output.blk_pf = Number.isFinite(output.blk) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.blk / output.pf, 2) : "";
+  output.stocks_pf = Number.isFinite(output.stocks) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.stocks / output.pf, 2) : "";
   return output;
 }
 
@@ -376,9 +383,10 @@ aggregatedRows.sort((left, right) => {
   return String(left.player_name).localeCompare(String(right.player_name), undefined, { numeric: true, sensitivity: "base" });
 });
 
-const columns = [
+  const columns = [
   "season",
   "age_range",
+  "level",
   "circuit",
   "event_name",
   "event_url",
@@ -414,6 +422,8 @@ const columns = [
   "ftm",
   "ftm_pg",
   "ftm_fga",
+  "three_pr",
+  "three_pr_plus_ftm_fga",
   "tp_pct",
   "three_pe",
   "ast",
@@ -430,6 +440,8 @@ const columns = [
   "stl_pg",
   "pf",
   "pf_pg",
+  "blk_pf",
+  "stocks_pf",
   "stocks",
   "stocks_pg",
 ];

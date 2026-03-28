@@ -1075,7 +1075,7 @@ const DATASETS = {
     playerColumn: "player_name",
     teamColumn: "team_name",
     lockedColumns: ["rank", "season", "age_range", "circuit", "player_name", "team_name"],
-    searchColumns: ["player_name", "player_search_text", "team_name", "team_search_text", "age_range", "event_name", "circuit"],
+    searchColumns: ["player_name", "player_search_text", "team_name", "team_search_text", "age_range", "level", "event_name", "circuit"],
     sortBy: "pts_pg",
     sortDir: "desc",
     defaultAllYears: true,
@@ -1084,24 +1084,26 @@ const DATASETS = {
     demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
     groups: [
       { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram"] },
-      { id: "shooting", label: "Shooting", columns: ["fg_pct", "2p_pct", "tp_pct", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm", "ftm_pg", "ftm_fga", "three_pe"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "fgm", "fga", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm_pg", "ftm_fga"] },
+      { id: "shooting", label: "Shooting", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "three_pr_plus_ftm_fga", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm", "ftm_pg", "ftm_fga", "three_pe"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "three_pr_plus_ftm_fga", "fgm", "fga", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm_pg", "ftm_fga"] },
       { id: "playmaking", label: "Playmaking", columns: ["ast", "ast_pg", "tov", "tov_pg", "usg_pct", "atr", "psp"], defaultColumns: ["ast", "ast_pg", "tov", "tov_pg", "usg_pct", "atr", "psp"] },
-      { id: "defense", label: "Defense", columns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "pf", "pf_pg", "dsi", "stocks", "stocks_pg"], defaultColumns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "stocks", "stocks_pg"] },
+      { id: "defense", label: "Defense", columns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "pf", "pf_pg", "blk_pf", "dsi", "stocks", "stocks_pg", "stocks_pf"], defaultColumns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "blk_pf", "stocks", "stocks_pg", "stocks_pf"] },
       { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"], defaultColumns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"] },
     ],
     singleFilters: withSharedSingleFilters([
       { id: "circuit", label: "Circuit", column: "circuit" },
+      { id: "age_range", label: "Age", column: "age_range", options: [{ value: "all", label: "All Ages" }, { value: "17U", label: "17U" }, { value: "16U", label: "16U" }, { value: "15U", label: "15U" }] },
+      { id: "class_year", label: "Class", column: "class_year" },
     ]),
     multiFilters: [
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
-      { id: "class_year", label: "Class", column: "class_year" },
     ],
-    defaultVisible: ["rank", "season", "age_range", "circuit", "player_name", "team_name", "pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "tpm_pg", "tpa_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40"],
+    defaultVisible: ["rank", "season", "age_range", "circuit", "player_name", "team_name", "pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40"],
     labels: {
       rank: "",
       season: "Year",
       event_total_players: "Field",
       age_range: "Age",
+      level: "Level",
       circuit: "Circuit",
       event_name: "Event",
       player_name: "Player",
@@ -1143,6 +1145,8 @@ const DATASETS = {
       ftm_pg: "FTM/G",
       ftm_fga: "FTM/FGA",
       tp_pct: "3PT%",
+      three_pr: "3Pr",
+      three_pr_plus_ftm_fga: "3Pr+FTM/FGA",
       three_pe: "3PE",
       ram: "RAM",
       c_ram: "C-RAM",
@@ -1150,6 +1154,8 @@ const DATASETS = {
       usg_pct: "USG%",
       atr: "AST/TO",
       dsi: "DSI",
+      blk_pf: "BLK/PF",
+      stocks_pf: "Stocks/PF",
       pts_per40: "PTS/40",
       trb_per40: "TRB/40",
       ast_per40: "AST/40",
@@ -5175,6 +5181,8 @@ function getColumnWidth(column, dataset) {
   if (baseColumn === "event_name") return 180;
   if (baseColumn === "circuit") return 56;
   if (baseColumn === "ftm_fga") return 54;
+  if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
+  if (baseColumn === "three_pr_plus_ftm_fga") return 92;
   if (/player/i.test(baseColumn)) return 148;
   if (baseColumn === dataset.teamColumn || /team/i.test(baseColumn)) return 88;
   if (baseColumn === "competition_label") return 94;
@@ -5984,7 +5992,7 @@ function scaleRateColumns(row, columns, datasetId = "") {
 
 function scalePercentRatioColumns(row) {
   Object.keys(row || {}).forEach((column) => {
-    if (!/(^ftr$|_ftr$|^three_pr$|_three_pr$)/i.test(column)) return;
+    if (!/(^ftr$|_ftr$|^three_pr$|_three_pr$|^three_pr_plus_ftm_fga$|_three_pr_plus_ftm_fga$)/i.test(column)) return;
     if (typeof row[column] !== "number" || !Number.isFinite(row[column])) return;
     if (Math.abs(row[column]) <= 1.5) row[column] = row[column] * 100;
   });
@@ -6681,6 +6689,7 @@ function formatValue(dataset, column, value, row) {
   if (typeof value !== "number") return String(value);
   if (!Number.isFinite(value)) return "";
   if (column === "draft_pick" && row?._draftPickBlank) return "";
+  if (isZeroAttemptTwoPointRow(row, column)) return "";
   if (column === "rank") return String(value);
   if (/^(season|year|rookie_year)$/i.test(column) && Number.isInteger(value)) return String(value);
   if (column === "age") return value.toFixed(1);
@@ -6689,6 +6698,7 @@ function formatValue(dataset, column, value, row) {
   if (/(_att$|_made$|_miss$)/i.test(column)) return String(Math.round(value));
   if (column === "ast_to") return value.toFixed(2);
   if (column === "ftm_fga") return value.toFixed(2);
+  if (column === "blk_pf" || column === "stocks_pf") return value.toFixed(2);
   if (/ppp$/i.test(column)) return value.toFixed(3);
   if (/^(fic|ppr)$/i.test(column)) return value.toFixed(1);
   if (isRatioDisplayPercentColumn(dataset, column)) return (Math.abs(value) <= 1.5 ? value * 100 : value).toFixed(1);
@@ -6718,7 +6728,7 @@ function isRatioDisplayPercentColumn(dataset, column) {
 
 function isPercentRatioColumn(column) {
   const baseColumn = stripCompanionPrefix(column);
-  return /(^ftr$|_ftr$|^three_pr$|_three_pr$)/.test(baseColumn);
+  return /(^ftr$|_ftr$|^three_pr$|_three_pr$|^three_pr_plus_ftm_fga$|_three_pr_plus_ftm_fga$)/.test(baseColumn);
 }
 
 function isLeftAligned(dataset, column) {
