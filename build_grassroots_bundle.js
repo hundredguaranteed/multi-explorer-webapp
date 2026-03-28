@@ -261,6 +261,7 @@ function aggregateGroup(group) {
   output.three_pr_plus_ftm_fga = Number.isFinite(output.three_pr) && Number.isFinite(output.ftm_fga)
     ? round(output.three_pr + output.ftm_fga, 3)
     : "";
+  output.atr = Number.isFinite(output.ast) && Number.isFinite(output.tov) && output.tov > 0 ? round(output.ast / output.tov, 2) : "";
   output.blk_pf = Number.isFinite(output.blk) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.blk / output.pf, 2) : "";
   output.stocks_pf = Number.isFinite(output.stocks) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.stocks / output.pf, 2) : "";
   return output;
