@@ -506,7 +506,7 @@ function buildD1Config() {
     playerColumn: "player_name",
     teamColumn: "team_name",
     lockedColumns: ["rank", "season", "player_name", "team_name"],
-    searchColumns: ["player_name", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
+    searchColumns: ["player_name", "player_search_text", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
     sortBy: "min",
     sortDir: "desc",
     demoColumns,
@@ -707,7 +707,7 @@ function buildNbaCompanionConfig() {
     playerColumn: "player_name",
     teamColumn: "team_name",
     lockedColumns: ["rank", "season", "player_name", "team_name"],
-    searchColumns: ["player_name", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
+    searchColumns: ["player_name", "player_search_text", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
     sortBy: "nba_epm",
     sortDir: "desc",
     demoColumns,
@@ -1059,6 +1059,100 @@ const DATASETS = {
       d1_peak_dprpg: "D1 Peak dPRPG",
       d1_peak_bpm: "D1 Peak BPM",
       ...LOWER_TIER_SHOT_PROFILE_LABELS,
+    },
+  },
+  grassroots: {
+    id: "grassroots",
+    navLabel: "Grassroots",
+    title: "Grassroots",
+    subtitle: "EYBL + 3SSB + UAA",
+    dataScript: "data/vendor/grassroots_all_seasons.js",
+    globalName: "GRASSROOTS_ALL_CSV",
+    yearColumn: "season",
+    playerColumn: "player_name",
+    teamColumn: "team_name",
+    lockedColumns: ["rank", "season", "age_range", "circuit", "player_name", "team_name"],
+    searchColumns: ["player_name", "player_search_text", "team_name", "team_search_text", "age_range", "event_name", "circuit"],
+    sortBy: "pts_pg",
+    sortDir: "desc",
+    defaultAllYears: true,
+    minuteDefault: 1,
+    demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
+    demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
+    groups: [
+      { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram"] },
+      { id: "shooting", label: "Shooting", columns: ["fg_pct", "2p_pct", "tp_pct", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm", "ftm_pg", "ftm_fga", "three_pe"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "fgm", "fga", "tpm", "tpa", "tpm_pg", "tpa_pg", "ftm_pg", "ftm_fga"] },
+      { id: "playmaking", label: "Playmaking", columns: ["ast", "ast_pg", "tov", "tov_pg", "usg_pct", "atr", "psp"], defaultColumns: ["ast", "ast_pg", "tov", "tov_pg", "usg_pct", "atr", "psp"] },
+      { id: "defense", label: "Defense", columns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "pf", "pf_pg", "dsi", "stocks", "stocks_pg"], defaultColumns: ["trb", "trb_pg", "stl", "stl_pg", "blk", "blk_pg", "stocks", "stocks_pg"] },
+      { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"], defaultColumns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"] },
+    ],
+    singleFilters: withSharedSingleFilters([
+      { id: "circuit", label: "Circuit", column: "circuit" },
+    ]),
+    multiFilters: [
+      { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
+      { id: "class_year", label: "Class", column: "class_year" },
+    ],
+    defaultVisible: ["rank", "season", "age_range", "circuit", "player_name", "team_name", "pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "tpm_pg", "tpa_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40"],
+    labels: {
+      rank: "",
+      season: "Year",
+      event_total_players: "Field",
+      age_range: "Age",
+      circuit: "Circuit",
+      event_name: "Event",
+      player_name: "Player",
+      team_name: "Team",
+      pos: "Pos",
+      class_year: "Class",
+      height_in: "HT",
+      weight_lb: "WT",
+      gp: "GP",
+      min: "MIN",
+      mpg: "MIN/G",
+      pts: "PTS",
+      pts_pg: "PTS/G",
+      trb: "TRB",
+      trb_pg: "TRB/G",
+      ast: "AST",
+      ast_pg: "AST/G",
+      tov: "TOV",
+      tov_pg: "TOV/G",
+      stl: "STL",
+      stl_pg: "STL/G",
+      blk: "BLK",
+      blk_pg: "BLK/G",
+      pf: "PF",
+      pf_pg: "PF/G",
+      stocks: "Stocks",
+      stocks_pg: "Stocks/G",
+      fgm: "FGM",
+      fga: "FGA",
+      fg_pct: "FG%",
+      "2pm": "2PM",
+      "2pa": "2PA",
+      "2p_pct": "2P%",
+      tpm: "3PM",
+      tpa: "3PA",
+      tpm_pg: "3PM/G",
+      tpa_pg: "3PA/G",
+      ftm: "FTM",
+      ftm_pg: "FTM/G",
+      ftm_fga: "FTM/FGA",
+      tp_pct: "3PT%",
+      three_pe: "3PE",
+      ram: "RAM",
+      c_ram: "C-RAM",
+      psp: "PSP",
+      usg_pct: "USG%",
+      atr: "AST/TO",
+      dsi: "DSI",
+      pts_per40: "PTS/40",
+      trb_per40: "TRB/40",
+      ast_per40: "AST/40",
+      stl_per40: "STL/40",
+      blk_per40: "BLK/40",
+      stocks_per40: "Stocks/40",
     },
   },
   fiba: {
@@ -2682,6 +2776,7 @@ function enrichD1Rows(rows) {
     if (coachName) row.coach = coachName;
     refreshDerivedBiography(row);
   });
+  repairD1SplitAliasRows(rows);
   resolveD1SharedNameAssignments(rows);
 }
 
@@ -3177,6 +3272,225 @@ function assignD1CandidateMatches(rows, index) {
   });
 
   return matches;
+}
+
+function repairD1SplitAliasRows(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return;
+  const groups = new Map();
+  rows.forEach((row) => {
+    const signature = getD1SplitAliasSignature(row);
+    if (!signature) return;
+    if (!groups.has(signature)) groups.set(signature, []);
+    groups.get(signature).push(row);
+  });
+  if (!groups.size) return;
+
+  const replacements = new Map();
+  const mergedAway = new Set();
+  groups.forEach((group) => {
+    const nameKeys = Array.from(new Set(group.map((row) => normalizeNameKey(row.player_name || row.player)).filter(Boolean)));
+    if (nameKeys.length < 2) return;
+    const lastNames = Array.from(new Set(group.map((row) => getNameLastToken(row.player_name || row.player)).filter(Boolean)));
+    if (lastNames.length !== 1) return;
+    const merged = buildMergedD1SplitAliasRow(group);
+    if (!merged) return;
+    const keeper = chooseD1SplitAliasPlaytypeLeader(group);
+    if (!keeper) return;
+    replacements.set(keeper, merged);
+    group.forEach((row) => {
+      if (row !== keeper) mergedAway.add(row);
+    });
+  });
+  if (!replacements.size && !mergedAway.size) return;
+
+  const repaired = [];
+  rows.forEach((row) => {
+    if (mergedAway.has(row)) return;
+    repaired.push(replacements.get(row) || row);
+  });
+  rows.splice(0, rows.length, ...repaired);
+}
+
+function getD1SplitAliasSignature(row) {
+  if (!row) return "";
+  const season = getStringValue(normalizeSeasonValue(row.season));
+  const team = normalizeKey(row.team_name || row.team_full);
+  if (!season || !team || !hasD1SplitAliasAnchors(row)) return "";
+  return [
+    season,
+    team,
+    normalizeKey(row.conference),
+    normalizePosLabel(row.pos || row.pos_text),
+    normalizeClassValue(row.class_year),
+    formatD1SplitAliasValue(row.height_in, 0),
+    formatD1SplitAliasValue(firstFinite(row.weight_lb, row.weight, Number.NaN), 0),
+    formatD1SplitAliasValue(row.age, 1),
+    formatD1SplitAliasValue(firstFinite(row.gp, row.g, Number.NaN), 0),
+    formatD1SplitAliasValue(row._draftPickBlank ? Number.NaN : row.draft_pick, 0),
+    formatD1SplitAliasValue(row.porpag, 3),
+    formatD1SplitAliasValue(row.bpm, 3),
+    formatD1SplitAliasValue(row.obpm, 3),
+    formatD1SplitAliasValue(row.dbpm, 3),
+    formatD1SplitAliasValue(row.rim_att, 3),
+    formatD1SplitAliasValue(firstFinite(row.long2_att, row.mid_att, Number.NaN), 3),
+    formatD1SplitAliasValue(firstFinite(row.three_p_att, row.three_pa, Number.NaN), 3),
+    formatD1SplitAliasValue(row.ftr, 3),
+    formatD1SplitAliasValue(row.three_pr, 3),
+  ].join("|");
+}
+
+function hasD1SplitAliasAnchors(row) {
+  const anchors = [
+    row.height_in,
+    firstFinite(row.weight_lb, row.weight, Number.NaN),
+    row.age,
+    firstFinite(row.gp, row.g, Number.NaN),
+    row.porpag,
+    row.bpm,
+    row.obpm,
+    row.dbpm,
+    row.rim_att,
+    firstFinite(row.long2_att, row.mid_att, Number.NaN),
+    firstFinite(row.three_p_att, row.three_pa, Number.NaN),
+    row.ftr,
+    row.three_pr,
+  ];
+  return anchors.filter(Number.isFinite).length >= 8;
+}
+
+function formatD1SplitAliasValue(value, decimals = 3) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "";
+  return numeric.toFixed(decimals);
+}
+
+function chooseD1SplitAliasPlaytypeLeader(group) {
+  return (group || [])
+    .slice()
+    .sort((left, right) => d1SplitAliasPlaytypeLeaderScore(right) - d1SplitAliasPlaytypeLeaderScore(left))[0] || null;
+}
+
+function d1SplitAliasPlaytypeLeaderScore(row) {
+  const possSum = d1PlaytypePossessionSum(row);
+  const coverage = d1PlaytypeCoverageCount(row);
+  const transitionPoss = Math.max(firstFinite(row.transition_poss, Number.NaN), 0);
+  return (coverage * 100000) + (possSum * 1000) + transitionPoss + countMeaningfulRowFields(row);
+}
+
+function d1SplitAliasIdentityScore(row) {
+  const playerIdBonus = getStringValue(row.player_id || row.pid || row.id).trim() ? 500 : 0;
+  const dobBonus = getStringValue(row.dob).trim() ? 250 : 0;
+  const draftBonus = Number.isFinite(row.draft_pick) && !row._draftPickBlank ? 150 : 0;
+  return playerIdBonus + dobBonus + draftBonus + countMeaningfulRowFields(row);
+}
+
+function d1PlaytypePossessionSum(row) {
+  return D1_TRUE_PLAYTYPE_IDS.reduce((sum, id) => sum + Math.max(firstFinite(row[`${id}_poss`], 0), 0), 0);
+}
+
+function d1PlaytypeCoverageCount(row) {
+  return D1_TRUE_PLAYTYPE_IDS.reduce((sum, id) => sum + (firstFinite(row[`${id}_poss`], 0) > 0 ? 1 : 0), 0);
+}
+
+function countMeaningfulRowFields(row) {
+  return Object.entries(row || {}).reduce((sum, [column, value]) => {
+    if (column.startsWith("_")) return sum;
+    if (value == null || value === "") return sum;
+    if (typeof value === "number" && !Number.isFinite(value)) return sum;
+    return sum + 1;
+  }, 0);
+}
+
+function chooseBestD1SplitAliasPrefixSource(group, prefix) {
+  return (group || [])
+    .slice()
+    .sort((left, right) => d1SplitAliasPrefixScore(right, prefix) - d1SplitAliasPrefixScore(left, prefix))[0] || null;
+}
+
+function d1SplitAliasPrefixScore(row, prefix) {
+  const keys = Object.keys(row || {}).filter((column) => column === prefix || column.startsWith(`${prefix}_`));
+  if (!keys.length) return -1;
+  const meaningful = keys.reduce((sum, column) => sum + (hasMeaningfulFieldValue(row[column]) ? 1 : 0), 0);
+  if (!meaningful) return -1;
+  let anchor = Number.NaN;
+  if (prefix === "transition") {
+    anchor = firstFinite(row.transition_poss, row.transition_freq, Number.NaN);
+  } else if (prefix === "halfcourt") {
+    anchor = firstFinite(row.halfcourt_two_pa, row.halfcourt_freq, Number.NaN);
+  } else if (prefix === "runner") {
+    anchor = firstFinite(row.runner_fg_att, row.runner_freq, Number.NaN);
+  } else if (prefix === "drive") {
+    anchor = firstFinite(row.drive_poss, row.drive_freq, Number.NaN);
+  } else {
+    anchor = firstFinite(row[`${prefix}_poss`], row[`${prefix}_freq`], row[`${prefix}_ppp`], Number.NaN);
+  }
+  return (meaningful * 1000) + Math.max(anchor, 0);
+}
+
+function copyD1SplitAliasPrefixFields(target, source, prefix) {
+  if (!target || !source) return;
+  Object.keys(source).forEach((column) => {
+    if (column === prefix || column.startsWith(`${prefix}_`)) target[column] = source[column];
+  });
+}
+
+function buildMergedD1SplitAliasRow(group) {
+  if (!group?.length) return null;
+  const playtypeLeader = chooseD1SplitAliasPlaytypeLeader(group);
+  if (!playtypeLeader) return null;
+  const identityLeader = group
+    .slice()
+    .sort((left, right) => d1SplitAliasIdentityScore(right) - d1SplitAliasIdentityScore(left))[0] || playtypeLeader;
+  const merged = { ...playtypeLeader };
+  const aliasNames = new Set();
+
+  group.forEach((row) => {
+    const playerName = getStringValue(row.player_name || row.player).trim();
+    if (playerName) aliasNames.add(playerName);
+    Object.keys(row || {}).forEach((column) => {
+      if (column.startsWith("_")) return;
+      if (["player_name", "player", "player_search_text", "team_search_text", "coach_search_text"].includes(column)) return;
+      if (!hasMeaningfulFieldValue(merged[column]) && hasMeaningfulFieldValue(row[column])) {
+        merged[column] = row[column];
+      }
+    });
+  });
+
+  [...D1_TRUE_PLAYTYPE_IDS, "halfcourt", "creation", "shooting", "assisted_fin", "unassisted_fin", "transition", "runner", "drive"].forEach((prefix) => {
+    const source = chooseBestD1SplitAliasPrefixSource(group, prefix);
+    if (source) copyD1SplitAliasPrefixFields(merged, source, prefix);
+  });
+
+  if ((!Number.isFinite(merged.draft_pick) || merged._draftPickBlank) && Number.isFinite(identityLeader.draft_pick) && !identityLeader._draftPickBlank) {
+    merged.draft_pick = identityLeader.draft_pick;
+    merged._draftPickBlank = false;
+  }
+  if (!getStringValue(merged.player_id || merged.pid || merged.id).trim()) {
+    const identityId = getStringValue(identityLeader.player_id || identityLeader.pid || identityLeader.id).trim();
+    if (identityId) merged.player_id = identityId;
+  }
+  if (!getStringValue(merged.dob).trim()) {
+    const dob = getStringValue(identityLeader.dob).trim();
+    if (dob) merged.dob = dob;
+  }
+
+  merged.player_search_text = Array.from(aliasNames).join(" ");
+  merged._searchCacheKey = "";
+  merged._searchHaystack = "";
+  merged._colorBucketCacheKey = "";
+  merged._colorBucketValue = "";
+  return enhanceRowForDataset(merged, "d1");
+}
+
+function hasMeaningfulFieldValue(value) {
+  if (value == null || value === "") return false;
+  if (typeof value === "number") return Number.isFinite(value);
+  return true;
+}
+
+function getNameLastToken(value) {
+  const tokens = normalizeNameKey(value).split(" ").filter(Boolean);
+  return tokens[tokens.length - 1] || "";
 }
 
 function resolveD1SharedNameAssignments(rows) {
@@ -3698,7 +4012,11 @@ function renderFilters(dataset, state) {
   renderStatGroups(dataset, state);
   elements.searchInput.value = state.search;
   const searchLabel = document.querySelector('label[for="searchInput"]');
-  if (searchLabel) searchLabel.textContent = dataset.id === "d1" ? "Player / Team / Coach" : "Player / Team";
+  if (searchLabel) {
+    if (dataset.id === "d1") searchLabel.textContent = "Player / Team / Coach";
+    else if (dataset.id === "grassroots") searchLabel.textContent = "Player / Team / Age";
+    else searchLabel.textContent = "Player / Team";
+  }
   elements.searchInput.placeholder = dataset.id === "d1" ? "Use && for multiple terms" : "Start typing";
 }
 
@@ -4328,6 +4646,7 @@ function aggregateCareerRows(dataset, rows) {
   let latest = rows[0] || {};
   const minuteWeights = new Array(rows.length);
   const defaultWeights = new Array(rows.length);
+  const playerSearchValues = new Set();
   const teamSearchValues = new Set();
   const coachSearchValues = new Set();
   const competitionLabels = new Set();
@@ -4335,6 +4654,8 @@ function aggregateCareerRows(dataset, rows) {
     if (compareYears(getStringValue(row[dataset.yearColumn]), getStringValue(latest[dataset.yearColumn])) < 0) {
       latest = row;
     }
+    const playerText = getStringValue(row.player_search_text || row.player_name || row.player).trim();
+    if (playerText) playerSearchValues.add(playerText);
     const teamText = getStringValue(row.team_search_text || row[dataset.teamColumn]).trim();
     if (teamText) teamSearchValues.add(teamText);
     const coachText = getStringValue(row.coach_search_text || row.coach).trim();
@@ -4421,6 +4742,7 @@ function aggregateCareerRows(dataset, rows) {
 
   aggregate[dataset.yearColumn] = latest[dataset.yearColumn];
   aggregate[dataset.teamColumn] = latest[dataset.teamColumn];
+  aggregate.player_search_text = Array.from(playerSearchValues).join(" ");
   aggregate.team_search_text = Array.from(teamSearchValues).join(" ");
   aggregate.coach_search_text = Array.from(coachSearchValues).join(" ");
   if (dataset.id === "fiba") {
@@ -4658,6 +4980,10 @@ function getColumnWidth(column, dataset) {
   const baseColumn = stripCompanionPrefix(column);
   if (column === "rank") return 18;
   if (baseColumn === dataset.yearColumn || baseColumn === "season") return 48;
+  if (baseColumn === "age_range") return 52;
+  if (baseColumn === "event_name") return 180;
+  if (baseColumn === "circuit") return 56;
+  if (baseColumn === "ftm_fga") return 54;
   if (/player/i.test(baseColumn)) return 148;
   if (baseColumn === dataset.teamColumn || /team/i.test(baseColumn)) return 88;
   if (baseColumn === "competition_label") return 94;
@@ -5098,6 +5424,7 @@ function enhanceRowForDataset(row, datasetId) {
   if (datasetId === "d2") enhanceD2Row(out);
   if (datasetId === "naia") enhanceCollegeRow(out, datasetId);
   if (datasetId === "juco") enhanceCollegeRow(out, datasetId);
+  if (datasetId === "grassroots") enhanceCollegeRow(out, datasetId);
   if (datasetId === "fiba") enhanceFibaRow(out);
   if (datasetId === "nba") enhanceNbaRow(out);
   normalizePercentLikeColumns(out, datasetId);
@@ -5130,7 +5457,7 @@ function enhanceCommonRow(row, datasetId) {
 
   if (typeof row.team_name === "string") {
     row.team_full = row.team_full || row.team_name;
-    row.team_name = simplifySchoolName(row.team_name, datasetId);
+    if (datasetId !== "grassroots") row.team_name = simplifySchoolName(row.team_name, datasetId);
   }
 
   if (!Number.isFinite(row.height_in) && Number.isFinite(row.inches)) row.height_in = row.inches;
@@ -5175,6 +5502,7 @@ function enhanceCommonRow(row, datasetId) {
     row.stocks = row.stl + row.blk;
   }
 
+  row.player_search_text = Array.from(new Set([row.player_name, row.player, row.player_search_text].map((value) => getStringValue(value).trim()).filter(Boolean))).join(" ");
   row.team_search_text = Array.from(new Set([row.team_name, row.team_full, row.team_alias, row.team_alias_all].map((value) => getStringValue(value).trim()).filter(Boolean))).join(" ");
   row.coach_search_text = getStringValue(row.coach).trim();
 }
@@ -6161,6 +6489,7 @@ function formatValue(dataset, column, value, row) {
   if (/_poss$/i.test(column)) return value.toFixed(1);
   if (/(_att$|_made$|_miss$)/i.test(column)) return String(Math.round(value));
   if (column === "ast_to") return value.toFixed(2);
+  if (column === "ftm_fga") return value.toFixed(2);
   if (/ppp$/i.test(column)) return value.toFixed(3);
   if (/^(fic|ppr)$/i.test(column)) return value.toFixed(1);
   if (isRatioDisplayPercentColumn(dataset, column)) return (Math.abs(value) <= 1.5 ? value * 100 : value).toFixed(1);
@@ -6198,7 +6527,7 @@ function isLeftAligned(dataset, column) {
 }
 
 function isWrapColumn(dataset, column) {
-  return column === dataset?.playerColumn || column === dataset?.teamColumn || column === "coach" || column === "competition_label";
+  return column === dataset?.playerColumn || column === dataset?.teamColumn || column === "coach" || column === "competition_label" || column === "event_name";
 }
 
 function isD1PlaytypeColumn(column) {
