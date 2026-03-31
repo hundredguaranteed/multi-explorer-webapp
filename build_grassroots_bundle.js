@@ -3,8 +3,6 @@ const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
 const sources = [
-  { circuit: "3SSB", file: path.join(rootDir, "adidas_3ssb_all_event_player_stats_clean.csv"), include: () => true },
-  { circuit: "UAA", file: path.join(rootDir, "uaa_under_armour_all_event_player_stats_clean.csv"), include: () => true },
   {
     circuit: "EYBL",
     file: path.join(rootDir, "nike_all_event_player_stats_clean.csv"),
@@ -13,10 +11,42 @@ const sources = [
       return /eybl/i.test(eventName) && !/eycl|scholastic/i.test(eventName);
     },
   },
+  {
+    circuit: "Nike Other",
+    file: path.join(rootDir, "nike_all_event_player_stats_clean.csv"),
+    include: (row) => {
+      const eventName = String(row.event_name || "");
+      return /nike/i.test(eventName) && (!/eybl/i.test(eventName) || /eycl|scholastic/i.test(eventName));
+    },
+  },
+  { circuit: "3SSB", file: path.join(rootDir, "adidas_3ssb_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "UAA", file: path.join(rootDir, "uaa_under_armour_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "Puma", file: path.join(rootDir, "puma_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "OTE", file: path.join(rootDir, "ote_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "Grind Session", file: path.join(rootDir, "grind_session_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "NBPA 100", file: path.join(rootDir, "nbpa_100_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "Hoophall", file: path.join(rootDir, "hoophall_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "Montverde", file: path.join(rootDir, "montverde_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "EPL", file: path.join(rootDir, "epl_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "General HS", file: path.join(rootDir, "showcases_all_event_player_stats_clean.csv"), include: () => true },
+  { circuit: "General HS", file: path.join(rootDir, "general_hs_all_event_player_stats_clean.csv"), include: () => true },
 ];
 
 const outputFile = path.join(__dirname, "data", "vendor", "grassroots_all_seasons.js");
-const circuitOrder = new Map([["EYBL", 0], ["3SSB", 1], ["UAA", 2]]);
+const circuitOrder = new Map([
+  ["EYBL", 0],
+  ["Nike Other", 1],
+  ["3SSB", 2],
+  ["UAA", 3],
+  ["Puma", 4],
+  ["OTE", 5],
+  ["Grind Session", 6],
+  ["NBPA 100", 7],
+  ["Hoophall", 8],
+  ["Montverde", 9],
+  ["EPL", 10],
+  ["General HS", 11],
+]);
 
 function parseCSV(text) {
   const rows = [];
@@ -138,6 +168,27 @@ function ageSortValue(ageRange) {
   return match ? Number(match[1]) : 0;
 }
 
+function bucketNumber(value, step) {
+  if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return "";
+  return Math.round(value / step) * step;
+}
+
+function mergeBucketKey(row) {
+  if (row.circuit === "General HS") {
+    const player = normalizeKey(row.player_name);
+    const height = bucketNumber(row.height_in, 2);
+    const weight = bucketNumber(row.weight_lb, 5);
+    const pos = normalizeKey(row.pos);
+    return [row.season, row.age_range, player, height, weight, pos].join("|");
+  }
+  return [
+    row.season,
+    row.age_range,
+    normalizeKey(row.team_name),
+    normalizeKey(row.player_name),
+  ].join("|");
+}
+
 function firstNonEmpty(group, column) {
   for (const row of group) {
     const value = row[column];
@@ -169,15 +220,14 @@ function circuitSortValue(circuitText) {
     .reduce((min, value) => Math.min(min, value), 99);
 }
 
+function inferCircuit(sourceCircuit, row) {
+  return sourceCircuit;
+}
+
 function aggregateRows(rows) {
   const groups = new Map();
   rows.forEach((row) => {
-    const key = [
-      row.season,
-      row.age_range,
-      normalizeKey(row.team_name),
-      normalizeKey(row.player_name),
-    ].join("|");
+    const key = mergeBucketKey(row);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });
@@ -225,7 +275,7 @@ function aggregateGroup(group) {
   output.season = firstNonEmpty(group, "season");
   output.age_range = firstNonEmpty(group, "age_range") || "17U";
   output.level = output.age_range || "17U";
-  output.circuit = uniqueJoined(group, "circuit");
+  output.circuit = firstNonEmpty(group, "circuit");
   output.player_name = firstNonEmpty(group, "player_name");
   output.team_name = firstNonEmpty(group, "team_name");
   output.pos = firstNonEmpty(group, "pos");
@@ -364,7 +414,7 @@ sources.forEach(({ circuit, file, include }) => {
   const parsed = parseCSV(csv);
   parsed.forEach((row) => {
     if (!include(row)) return;
-    rows.push(mapRow(row, circuit));
+    rows.push(mapRow(row, inferCircuit(circuit, row)));
   });
 });
 
