@@ -946,7 +946,7 @@ function aggregateGrassrootsRowGroup(groupRows) {
   aggregate.state = uniqueStates.join(" / ");
   aggregate.gp = Math.round(aggregate.gp);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
-  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 2) : "";
+  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : "";
   aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : "";
   aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : "";
   aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : "";
@@ -1250,7 +1250,7 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
   aggregate.gp = roundGrassrootsCount(aggregate.gp);
   aggregate.min = Number.isFinite(aggregate.min) ? round(aggregate.min, 1) : "";
   aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : "";
-  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 2) : "";
+  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : "";
   aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : "";
   aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : "";
   aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : "";
