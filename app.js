@@ -1154,6 +1154,8 @@ const DATASETS = {
     title: "Grassroots",
     subtitle: "EYBL + Nike Other + 3SSB + UAA + General HS + more",
     dataScript: "data/vendor/grassroots_all_seasons.js",
+    yearManifestScript: "data/vendor/grassroots_year_manifest.js",
+    yearChunkTemplate: "data/vendor/grassroots_year_chunks/{season}.js",
     globalName: "GRASSROOTS_ALL_CSV",
     yearColumn: "season",
     playerColumn: "player_name",
@@ -1826,7 +1828,31 @@ function scheduleBackgroundTask(taskKey, callback, delayMs = 1200) {
 
 function scheduleDeferredHydration(datasetId) {
   const dataset = appState.datasetCache[datasetId];
-  if (!dataset?._hydrationPending || !supportsDeferredHydration(dataset) || dataset.autoHydrateDeferred === false) return;
+  if (!dataset?._hydrationPending) return;
+  if (dataset._grassrootsChunked) {
+    const missingYears = getGrassrootsMissingYears(dataset);
+    if (!missingYears.length) {
+      dataset._hydrated = true;
+      dataset._hydrationPending = false;
+      return;
+    }
+    scheduleBackgroundTask(`hydrate:${datasetId}`, async () => {
+      if (appState.currentId !== datasetId) return;
+      try {
+        elements.statusPill.textContent = `Loading ${dataset.navLabel} seasons`;
+        await ensureDatasetYearsLoaded(dataset, missingYears);
+        if (appState.currentId !== datasetId) return;
+        renderCurrentDataset();
+        elements.statusPill.textContent = `${dataset.navLabel} ready`;
+      } catch (error) {
+        if (appState.currentId !== datasetId) return;
+        elements.statusPill.textContent = `${dataset.navLabel} load failed`;
+        elements.resultsSubtitle.textContent = getStringValue(error?.message || error);
+      }
+    });
+    return;
+  }
+  if (!supportsDeferredHydration(dataset) || dataset.autoHydrateDeferred === false) return;
   scheduleBackgroundTask(`hydrate:${datasetId}`, async () => {
     if (appState.currentId !== datasetId) return;
     try {
@@ -2004,11 +2030,31 @@ async function ensureDatasetLoaded(datasetId, options = {}) {
   if (options.requireHydrated && supportsDeferredHydration(config)) {
     await Promise.all((config.deferredExtraScripts || []).map((src) => loadScriptOnce(src)));
   }
+  let useGrassrootsChunks = datasetId === "grassroots" && Boolean(config.yearChunkTemplate);
   let useMobileLite = datasetId === "d1" && isCompactViewport() && !options.requireHydrated && config.mobileDataScriptTemplate;
   let rows;
   let availableYears = [];
   try {
-    if (useMobileLite) {
+    if (useGrassrootsChunks) {
+      if (config.yearManifestScript) {
+        await loadScriptOnce(config.yearManifestScript);
+      }
+      availableYears = getGrassrootsAvailableYears(config);
+      const initialYears = getGrassrootsInitialYears(config);
+      if (!initialYears.length) {
+        await loadScriptOnce(config.dataScript);
+        const rawPayload = window[config.globalName] ?? "";
+        const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
+        rows = parseDatasetRows(csvText, datasetId, config, options);
+        availableYears = Array.from(new Set(rows.map((row) => getStringValue(row[config.yearColumn])).filter(Boolean))).sort(compareYears);
+      } else {
+        rows = [];
+        const initialDataset = { id: datasetId, rows, _loadedYears: new Set() };
+        await loadGrassrootsRowsForYears(initialDataset, config, initialYears, options);
+        rows = initialDataset.rows;
+        availableYears = availableYears.length ? availableYears : Array.from(new Set(rows.map((row) => getStringValue(row[config.yearColumn])).filter(Boolean))).sort(compareYears);
+      }
+    } else if (useMobileLite) {
       await loadScriptOnce(config.mobileDataManifestScript);
       availableYears = getD1AvailableYears(config);
       const initialYears = getD1InitialYears(config);
@@ -2032,28 +2078,43 @@ async function ensureDatasetLoaded(datasetId, options = {}) {
       rows = parseDatasetRows(csvText, datasetId, config, options);
     }
   } catch (error) {
-    if (!useMobileLite) throw error;
+    if (!useGrassrootsChunks && !useMobileLite) throw error;
+    useGrassrootsChunks = false;
     useMobileLite = false;
     await loadScriptOnce(config.dataScript);
     const rawPayload = window[config.globalName] ?? "";
     const csvText = Array.isArray(rawPayload) ? rawPayload.join("\n") : String(rawPayload);
     rows = parseDatasetRows(csvText, datasetId, config, options);
   }
+  rows = finalizeDatasetRows(rows, config);
+  const meta = buildDatasetMeta(rows, config);
+  const loadedYears = new Set(Array.from(new Set(rows.map((row) => getStringValue(row[config.yearColumn])).filter(Boolean))));
   const deferredHydrationMode = supportsDeferredHydration(config) && !options.requireHydrated
     ? (config.deferredHydrationMode || "full")
     : "";
-  const deferHydration = Boolean(deferredHydrationMode);
-  rows = finalizeDatasetRows(rows, config);
-  const meta = buildDatasetMeta(rows, config);
+  const grassrootsHydrationPending = useGrassrootsChunks && Array.isArray(availableYears) && availableYears.length
+    ? availableYears.some((season) => !loadedYears.has(getStringValue(season)))
+    : false;
+  const deferHydration = Boolean(deferredHydrationMode) || grassrootsHydrationPending;
   const dataset = { ...config, rows, meta, _hydrated: !deferHydration, _hydrationPending: deferHydration };
-  dataset._loadedYears = new Set(meta.years);
-  if (datasetId === "d1" && useMobileLite) {
+  dataset._loadedYears = loadedYears;
+  if (useGrassrootsChunks) {
+    dataset._grassrootsChunked = true;
+    dataset.availableYears = availableYears.length ? availableYears : meta.years;
+  } else if (datasetId === "d1" && useMobileLite) {
     dataset._mobileLite = true;
     dataset.availableYears = availableYears.length ? availableYears : meta.years;
   }
   appState.datasetCache[datasetId] = dataset;
   if (options.requireHydrated) {
-    await ensureDatasetHydrated(datasetId);
+    if (useGrassrootsChunks) {
+      const hydratedYears = (Array.isArray(dataset.availableYears) && dataset.availableYears.length)
+        ? dataset.availableYears
+        : (Array.isArray(availableYears) && availableYears.length ? availableYears : meta.years);
+      await ensureDatasetYearsLoaded(dataset, hydratedYears, options);
+    } else {
+      await ensureDatasetHydrated(datasetId);
+    }
   } else if (!deferHydration) {
     dataset._hydrated = true;
     dataset._hydrationPending = false;
@@ -2184,13 +2245,84 @@ function getD1InitialYears(config) {
 }
 
 function getD1YearChunkPath(config, season) {
-  if (!config?.mobileDataScriptTemplate) return "";
-  return config.mobileDataScriptTemplate.replace("{season}", sanitizeDeferredSeasonKey(season));
+  return buildYearChunkPath(config?.mobileDataScriptTemplate, season);
 }
 
 function getLoadedYearSet(dataset) {
   if (!dataset._loadedYears) dataset._loadedYears = new Set();
   return dataset._loadedYears;
+}
+
+function buildYearChunkPath(template, season) {
+  if (!template) return "";
+  return template.replace("{season}", sanitizeDeferredSeasonKey(season));
+}
+
+function getGrassrootsManifest() {
+  return window.GRASSROOTS_YEAR_MANIFEST || null;
+}
+
+function getGrassrootsAvailableYears(config) {
+  const manifestYears = getGrassrootsManifest()?.years;
+  if (Array.isArray(manifestYears) && manifestYears.length) return manifestYears;
+  return Array.isArray(config?.availableYears) ? config.availableYears : [];
+}
+
+function getGrassrootsInitialYears(config) {
+  const manifest = getGrassrootsManifest();
+  const years = getGrassrootsAvailableYears(config);
+  if (!years.length) return [];
+  if (Array.isArray(manifest?.initialYears) && manifest.initialYears.length) return manifest.initialYears;
+  return years.slice(-1);
+}
+
+function getGrassrootsYearChunkPath(config, season) {
+  return buildYearChunkPath(config?.yearChunkTemplate, season);
+}
+
+function getGrassrootsMissingYears(dataset) {
+  const availableYears = getGrassrootsAvailableYears(dataset);
+  if (!availableYears.length) return [];
+  const loadedYears = getLoadedYearSet(dataset);
+  return availableYears.filter((season) => !loadedYears.has(getStringValue(season)));
+}
+
+async function loadGrassrootsRowsForYears(dataset, config, years, options = {}) {
+  const targetYears = Array.from(new Set((years || []).map((season) => getStringValue(season).trim()).filter(Boolean)));
+  if (!targetYears.length) return dataset;
+  if (!dataset._grassrootsRowLoads) dataset._grassrootsRowLoads = new Map();
+  if (!dataset._loadedYears) dataset._loadedYears = new Set();
+
+  const rowsToAppend = [];
+  for (const season of targetYears) {
+    if (dataset._loadedYears.has(season)) continue;
+    if (!dataset._grassrootsRowLoads.has(season)) {
+      const promise = (async () => {
+        const src = getGrassrootsYearChunkPath(config, season);
+        if (!src) throw new Error(`Missing grassroots chunk for ${season}`);
+        await loadScriptOnce(src);
+        const chunkMap = window.GRASSROOTS_YEAR_CSV_CHUNKS || {};
+        const csvText = chunkMap[season];
+        if (!csvText) throw new Error(`Missing grassroots rows for ${season}`);
+        return parseDatasetRows(csvText, dataset.id, config, options);
+      })();
+      dataset._grassrootsRowLoads.set(season, promise);
+    }
+    const rows = await dataset._grassrootsRowLoads.get(season);
+    rowsToAppend.push(...rows);
+    dataset._loadedYears.add(season);
+    dataset._grassrootsRowLoads.delete(season);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  if (!rowsToAppend.length) return dataset;
+  dataset.rows = finalizeDatasetRows(dataset.rows.concat(rowsToAppend), config);
+  dataset.meta = buildDatasetMeta(dataset.rows, config);
+  dataset._rowVersion = (dataset._rowVersion || 0) + 1;
+  invalidateDatasetDerivedCaches(dataset.id);
+  dataset._hydrationPending = getGrassrootsMissingYears(dataset).length > 0;
+  dataset._hydrated = !dataset._hydrationPending;
+  return dataset;
 }
 
 function parseDatasetRows(csvText, datasetId, config, options = {}) {
@@ -2252,6 +2384,7 @@ async function loadD1RowsForYears(dataset, config, years, options = {}) {
   const mergedRows = dataset.rows.concat(rowsToAppend);
   dataset.rows = finalizeDatasetRows(mergedRows, config);
   dataset.meta = buildDatasetMeta(dataset.rows, config);
+  dataset._rowVersion = (dataset._rowVersion || 0) + 1;
   invalidateDatasetDerivedCaches(dataset.id);
   return dataset;
 }
@@ -2281,10 +2414,16 @@ async function upgradeMobileD1Dataset(dataset, options = {}) {
 }
 
 async function ensureDatasetYearsLoaded(dataset, years, options = {}) {
-  if (!dataset || dataset.id !== "d1" || !isMobileLiteD1Dataset(dataset)) return dataset;
   const targetYears = Array.from(new Set((years || []).map((season) => getStringValue(season).trim()).filter(Boolean)));
+  if (!dataset || !targetYears.length) return dataset;
   const missingYears = targetYears.filter((season) => !getLoadedYearSet(dataset).has(season));
   if (!missingYears.length) return dataset;
+  if (dataset.id === "grassroots" && dataset._grassrootsChunked) {
+    elements.statusPill.textContent = `Loading ${dataset.navLabel} ${missingYears.join(" / ")}`;
+    await loadGrassrootsRowsForYears(dataset, DATASETS.grassroots, missingYears, options);
+    return dataset;
+  }
+  if (dataset.id !== "d1" || !isMobileLiteD1Dataset(dataset)) return dataset;
   elements.statusPill.textContent = `Loading ${dataset.navLabel} ${missingYears.join(" / ")}`;
   await loadD1RowsForYears(dataset, DATASETS.d1, missingYears, options);
   return dataset;
@@ -4391,7 +4530,7 @@ function createInitialUiState(dataset) {
   const state = {
     search: "",
     team: "all",
-    years: new Set(dataset.defaultAllYears ? dataset.meta.years : (dataset.meta.latestYear ? [dataset.meta.latestYear] : dataset.meta.years)),
+    years: new Set(dataset.defaultAllYears ? (getAvailableYears(dataset).length ? getAvailableYears(dataset) : dataset.meta.years) : (dataset.meta.latestYear ? [dataset.meta.latestYear] : dataset.meta.years)),
     sortBy: dataset.sortBy,
     sortDir: dataset.sortDir,
     sortBlankMode: "last",
@@ -4525,6 +4664,7 @@ function renderCurrentDataset() {
 
   renderFilters(dataset, state);
   renderResultsOnly(dataset, state);
+  scheduleDeferredHydration(dataset.id);
   elements.statusPill.textContent = `${dataset.navLabel} ready`;
 }
 
@@ -4687,7 +4827,7 @@ function renderExtraFilters(dataset, state) {
     button.addEventListener("click", () => {
       state.extraSelects.view_mode = button.dataset.viewMode;
       state.team = "all";
-      if (button.dataset.viewMode === "career") state.years = new Set(dataset.meta.years);
+      if (button.dataset.viewMode === "career") state.years = new Set(getAvailableYears(dataset));
       renderCurrentDataset();
     });
   });
@@ -5209,10 +5349,14 @@ function getRenderCache(state) {
 function getDisplayRowsCacheKey(dataset, state) {
   const yearsKey = Array.from(state?.years || []).sort(compareYears).join("|");
   const viewMode = getStringValue(state?.extraSelects?.view_mode || "season");
-  if (viewMode !== "career") return `${viewMode}|${yearsKey}`;
+  const rowCount = Array.isArray(dataset?.rows) ? dataset.rows.length : 0;
+  const rowVersion = Number(dataset?._rowVersion) || 0;
+  if (viewMode !== "career") return `${viewMode}|${yearsKey}|${rowCount}|${rowVersion}`;
   return [
     viewMode,
     yearsKey,
+    rowCount,
+    rowVersion,
     getStringValue(state?.team),
     getStringValue(state?.search).trim().toLowerCase(),
     serializeSingleFilterState(dataset, state),
