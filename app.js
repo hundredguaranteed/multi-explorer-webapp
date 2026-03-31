@@ -16,6 +16,7 @@ const MINUTES_DEFAULT = 400;
 const TABLE_FRAME_LIMIT = 2580;
 const COLOR_SCALE_MAX_ROWS = 8000;
 const STATUS_ANNOTATIONS_SCRIPT = "data/vendor/status_annotations.js";
+const SCRIPT_CACHE_BUST = Date.now();
 const SHARED_SINGLE_FILTERS = [
   {
     id: "view_mode",
@@ -2115,20 +2116,26 @@ function companionNbaCareerScore(row) {
 }
 
 function loadScriptOnce(src) {
-  if (appState.scriptLoads.has(src)) {
-    return appState.scriptLoads.get(src);
+  const url = new URL(src, window.location.href);
+  if (url.origin === window.location.origin) {
+    url.searchParams.set("v", String(SCRIPT_CACHE_BUST));
+  }
+  const cacheBustedSrc = url.href;
+
+  if (appState.scriptLoads.has(cacheBustedSrc)) {
+    return appState.scriptLoads.get(cacheBustedSrc);
   }
 
   const promise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL(src, window.location.href).href;
+    script.src = cacheBustedSrc;
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    script.onerror = () => reject(new Error(`Failed to load ${cacheBustedSrc}`));
     document.head.appendChild(script);
   });
 
-  appState.scriptLoads.set(src, promise);
+  appState.scriptLoads.set(cacheBustedSrc, promise);
   return promise;
 }
 
