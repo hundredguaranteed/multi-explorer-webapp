@@ -417,6 +417,7 @@ a,
   width: min(var(--table-frame-width, var(--table-max-width)), 100%);
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
+  contain: layout paint;
 }
 
 #statsTable {

@@ -1,5 +1,5 @@
 const LOAD_STEP = 40;
-const SEARCH_RENDER_DEBOUNCE_MS = 180;
+const SEARCH_RENDER_DEBOUNCE_MS = 120;
 const HOME_ID = "home";
 const HOME_PAGES = [
   { id: "d1", label: "D1" },
@@ -16,7 +16,8 @@ const MINUTES_DEFAULT = 400;
 const TABLE_FRAME_LIMIT = 2580;
 const COLOR_SCALE_MAX_ROWS = 8000;
 const STATUS_ANNOTATIONS_SCRIPT = "data/vendor/status_annotations.js";
-const SCRIPT_CACHE_BUST = Date.now();
+const APP_BUILD_VERSION = "20260331-grassroots-v3";
+const SCRIPT_CACHE_BUST = APP_BUILD_VERSION;
 const SHARED_SINGLE_FILTERS = [
   {
     id: "view_mode",
@@ -1196,11 +1197,11 @@ const DATASETS = {
     demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
     demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
     groups: [
-       { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "pos"], defaultColumns: ["pos"] },
-       { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm"] },
+       { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "circuit", "pos"], defaultColumns: ["pos"] },
+      { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm"] },
       { id: "ratios", label: "Ratios", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"] },
-      { id: "per_game", label: "Per Game", columns: ["pts_pg", "trb_pg", "ast_pg", "tov_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg", "tpm_pg", "tpa_pg", "ftm_pg"], defaultColumns: ["pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg"] },
-      { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "tov_per40", "stl_per40", "blk_per40", "pf_per40", "stocks_per40"], defaultColumns: [] },
+      { id: "per_game", label: "Per Game", columns: ["pts_pg", "trb_pg", "ast_pg", "ast_stl_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg", "tpm_pg", "tpa_pg", "ftm_pg"], defaultColumns: ["pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg"] },
+      { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "ast_stl_per40", "tov_per40", "stl_per40", "blk_per40", "pf_per40", "stocks_per40", "three_pa_per40"], defaultColumns: [] },
       { id: "totals", label: "Totals", columns: ["pts", "trb", "ast", "tov", "stl", "blk", "pf", "stocks", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "ftm"], defaultColumns: ["pts", "trb", "ast", "stl", "blk", "pf", "fgm", "fga", "2pm", "tpm", "ftm"] },
     ],
     singleFilters: withSharedSingleFilters([
@@ -1214,7 +1215,7 @@ const DATASETS = {
       { id: "circuit", label: "Circuit", column: "circuit", sort: GRASSROOTS_CIRCUIT_ORDER },
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
     ],
-    defaultVisible: ["rank", "season", "circuit", "player_name", "team_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
+    defaultVisible: ["rank", "season", "setting", "state", "age_range", "class_year", "event_name", "circuit", "player_name", "team_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
     labels: {
       rank: "",
       season: "Year",
@@ -1243,16 +1244,19 @@ const DATASETS = {
       trb_pg: "TRB/G",
       ast: "AST",
       ast_pg: "AST/G",
+      ast_stl_pg: "AST+STL/G",
       tov: "TOV",
       tov_pg: "TOV/G",
       stl: "STL",
       stl_pg: "STL/G",
+      ast_stl_per40: "AST+STL/40",
       blk: "BLK",
       blk_pg: "BLK/G",
       pf: "PF",
       pf_pg: "PF/G",
       stocks: "Stocks",
       stocks_pg: "Stocks/G",
+      three_pa_per40: "3PA/40",
       fgm: "FGM",
       fga: "FGA",
       fg_pct: "FG%",
@@ -4806,9 +4810,6 @@ function createInitialUiState(dataset) {
   dataset.meta.demoFilterMeta.forEach((item) => {
     demoFilters[item.column] = { min: "", max: "" };
   });
-  if (dataset.meta.minuteFilterColumn && demoFilters[dataset.meta.minuteFilterColumn]) {
-    demoFilters[dataset.meta.minuteFilterColumn].min = String(getDatasetMinuteThreshold(dataset));
-  }
 
   const state = {
     search: "",
@@ -6924,12 +6925,45 @@ function renderTable(dataset, state, filtered, renderContext = {}) {
   const columnWidths = visibleColumns.map((column) => getColumnWidth(column, dataset));
   const totalWidth = columnWidths.reduce((sum, width) => sum + width, 0);
   const frameWidth = Math.min(totalWidth || 320, TABLE_FRAME_LIMIT);
+  const shellKey = `${dataset.id}|${visibleColumns.join("|")}`;
+  const needsShellRebuild = elements.statsTable.dataset.shellKey !== shellKey || !elements.statsTableHead || !elements.statsTableBody;
   elements.tableWrapper.style.setProperty("--table-frame-width", `${frameWidth}px`);
   elements.statsTable.style.setProperty("--table-total-width", `${Math.max(totalWidth, 320)}px`);
-  const colgroup = `<colgroup>${visibleColumns.map((column, index) => `<col style="width:${columnWidths[index]}px">`).join("")}</colgroup>`;
-  elements.statsTable.innerHTML = `${colgroup}<thead id="statsTableHead"><tr>${visibleColumns.map((column) => renderHeaderCell(dataset, state, column)).join("")}</tr></thead><tbody id="statsTableBody"></tbody>`;
-  elements.statsTableHead = document.getElementById("statsTableHead");
-  elements.statsTableBody = document.getElementById("statsTableBody");
+  if (needsShellRebuild) {
+    const colgroup = `<colgroup>${visibleColumns.map((column, index) => `<col style="width:${columnWidths[index]}px">`).join("")}</colgroup>`;
+    elements.statsTable.innerHTML = `${colgroup}<thead id="statsTableHead"><tr>${visibleColumns.map((column) => renderHeaderCell(dataset, state, column)).join("")}</tr></thead><tbody id="statsTableBody"></tbody>`;
+    elements.statsTable.dataset.shellKey = shellKey;
+    elements.statsTableHead = document.getElementById("statsTableHead");
+    elements.statsTableBody = document.getElementById("statsTableBody");
+
+    elements.statsTableHead.querySelectorAll("[data-sort]").forEach((header) => {
+      header.addEventListener("click", async () => {
+        const column = header.dataset.sort;
+        if (!column) return;
+        if (isDeferredSupplementColumn(dataset, column)) {
+          await ensureDeferredColumnsReady(dataset, state, [column], { scope: "full" });
+          if (appState.currentId !== dataset.id) return;
+        }
+        if (state.sortBy === column) {
+          if (state.sortDir === "desc" && state.sortBlankMode !== "first") {
+            state.sortDir = "asc";
+            state.sortBlankMode = "last";
+          } else if (state.sortDir === "asc") {
+            state.sortDir = "desc";
+            state.sortBlankMode = "first";
+          } else {
+            state.sortDir = "desc";
+            state.sortBlankMode = "last";
+          }
+        } else {
+          state.sortBy = column;
+          state.sortDir = "desc";
+          state.sortBlankMode = "last";
+        }
+        renderResultsOnly(dataset, state);
+      });
+    });
+  }
 
   if (!rowsToRender.length) {
     elements.statsTableBody.innerHTML = `<tr class="empty-state"><td colspan="${Math.max(visibleColumns.length, 1)}">No rows matched the current filters.</td></tr>`;
@@ -6938,34 +6972,6 @@ function renderTable(dataset, state, filtered, renderContext = {}) {
       .map((row, index) => `<tr>${visibleColumns.map((column) => renderBodyCell(dataset, state, column, row, index, colorScale)).join("")}</tr>`)
       .join("");
   }
-
-  elements.statsTableHead.querySelectorAll("[data-sort]").forEach((header) => {
-    header.addEventListener("click", async () => {
-      const column = header.dataset.sort;
-      if (!column) return;
-      if (isDeferredSupplementColumn(dataset, column)) {
-        await ensureDeferredColumnsReady(dataset, state, [column], { scope: "full" });
-        if (appState.currentId !== dataset.id) return;
-      }
-      if (state.sortBy === column) {
-        if (state.sortDir === "desc" && state.sortBlankMode !== "first") {
-          state.sortDir = "asc";
-          state.sortBlankMode = "last";
-        } else if (state.sortDir === "asc") {
-          state.sortDir = "desc";
-          state.sortBlankMode = "first";
-        } else {
-          state.sortDir = "desc";
-          state.sortBlankMode = "last";
-        }
-      } else {
-        state.sortBy = column;
-        state.sortDir = "desc";
-        state.sortBlankMode = "last";
-      }
-      renderResultsOnly(dataset, state);
-    });
-  });
 
   updateLoadMoreButton(filtered.length, rowsToRender.length);
 }
@@ -6982,6 +6988,7 @@ function getColumnWidth(column, dataset) {
   if (baseColumn === "state") return 44;
   if (baseColumn === "circuit") return 190;
   if (baseColumn === "ftm_fga") return 54;
+  if (baseColumn === "ast_stl_pg" || baseColumn === "ast_stl_per40") return 58;
   if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
   if (baseColumn === "three_pr_plus_ftm_fga") return 92;
   if (/player/i.test(baseColumn)) return 148;
@@ -7252,12 +7259,22 @@ function getPercentileWeight(row, column, dataset) {
   }
   if (dataset?.id === "grassroots") {
     const explicitWeight = Number(row?.percentile_weight);
-    if (Number.isFinite(explicitWeight) && explicitWeight > 0) return explicitWeight;
-    return Math.max(getMinutesValue(row), 1) * Math.max(Number(row?.gp) || 1, 1);
+    const baseWeight = Number.isFinite(explicitWeight) && explicitWeight > 0
+      ? explicitWeight
+      : Math.max(getMinutesValue(row), 1) * Math.max(getGamesValue(row), 1);
+    if (isGrassrootsSampleSensitiveRatioColumn(column)) {
+      return baseWeight * Math.max(getGamesValue(row), 1);
+    }
+    return baseWeight;
   }
   const explicitWeight = Number(row?.percentile_weight);
   if (Number.isFinite(explicitWeight) && explicitWeight > 0) return explicitWeight;
   return Math.max(getMinutesValue(row), 1);
+}
+
+function isGrassrootsSampleSensitiveRatioColumn(column) {
+  const baseColumn = stripCompanionPrefix(column);
+  return /^(three_pr|ftm_fga|three_pr_plus_ftm_fga)$/i.test(baseColumn);
 }
 
 function getD1PlaytypeFrequency(row, prefix) {
@@ -8519,6 +8536,19 @@ function applyPerNormalization(rows, datasetId = "") {
     row.per = avg ? roundNumber((row._perBase / avg) * 15, 1) : "";
     delete row._perBase;
   });
+  if (datasetId === "grassroots") {
+    rows.forEach((row) => {
+      const ast = firstFinite(row.ast, Number.NaN);
+      const stl = firstFinite(row.stl, Number.NaN);
+      const combined = Number.isFinite(ast) && Number.isFinite(stl) ? ast + stl : Number.NaN;
+      row.ast_stl_pg = Number.isFinite(combined) && Number.isFinite(row.gp) && row.gp > 0
+        ? roundNumber(combined / row.gp, 1)
+        : "";
+      row.ast_stl_per40 = Number.isFinite(combined) && Number.isFinite(row.min) && row.min > 0
+        ? roundNumber((combined / row.min) * 40, 1)
+        : "";
+    });
+  }
 }
 
 function perBaseValue(row) {

@@ -969,6 +969,8 @@ function aggregateGrassrootsRowGroup(groupRows) {
   aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : "";
   aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : "";
   aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
+  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
+  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
   aggregate.tov_per40 = aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : "";
   aggregate.pf_per40 = aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : "";
   aggregate.three_pe = aggregate.tpa;
@@ -1270,6 +1272,8 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
   aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : "";
   aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : "";
   aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
+  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
+  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
   aggregate.three_pe = aggregate.tpa;
   aggregate.adj_bpm = calculateGrassrootsAdjBpm(aggregate);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
@@ -1540,9 +1544,11 @@ function mapRow(row, circuit) {
     pf_pg: pfPg,
     stocks,
     stocks_pg: stocksPg,
+    ast_stl_pg: gpCount > 0 ? round((ast + stl) / gpCount, 1) : "",
     pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : "",
     trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
     ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : "",
+    ast_stl_per40: Number.isFinite(min) && min > 0 ? round(((ast + stl) / min) * 40, 1) : "",
     tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
     stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : "",
     blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : "",
