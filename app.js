@@ -16,7 +16,7 @@ const MINUTES_DEFAULT = 400;
 const TABLE_FRAME_LIMIT = 2580;
 const COLOR_SCALE_MAX_ROWS = 8000;
 const STATUS_ANNOTATIONS_SCRIPT = "data/vendor/status_annotations.js";
-const APP_BUILD_VERSION = "20260331-grassroots-v3";
+const APP_BUILD_VERSION = "20260331-grassroots-v5";
 const SCRIPT_CACHE_BUST = APP_BUILD_VERSION;
 const SHARED_SINGLE_FILTERS = [
   {
@@ -1161,9 +1161,9 @@ const DATASETS = {
     title: "Grassroots",
     subtitle: "EYBL + Nike Other + 3SSB + UAA + General HS + more",
     dataScript: "data/vendor/grassroots_all_seasons.js",
-    yearManifestScript: "data/vendor/grassroots_year_manifest.js",
-    yearChunkTemplate: "data/vendor/grassroots_year_chunks/{season}.js",
-    grassrootsScopeScriptTemplate: "data/vendor/grassroots_scope_bundles/{scope}.js",
+    yearManifestScript: `data/vendor/grassroots_year_manifest.js?v=${SCRIPT_CACHE_BUST}`,
+    yearChunkTemplate: `data/vendor/grassroots_year_chunks/{season}.js?v=${SCRIPT_CACHE_BUST}`,
+    grassrootsScopeScriptTemplate: `data/vendor/grassroots_scope_bundles/{scope}.js?v=${SCRIPT_CACHE_BUST}`,
     globalName: "GRASSROOTS_ALL_CSV",
     yearColumn: "season",
     playerColumn: "player_name",
@@ -1172,22 +1172,15 @@ const DATASETS = {
     searchColumns: [
       "player_name",
       "player_search_text",
-      "player_aliases",
       "team_name",
-      "team_full",
       "team_search_text",
-      "team_aliases",
-      "player_cluster_key",
       "age_range",
-      "level",
       "event_name",
       "event_group",
-      "event_raw_name",
-      "event_aliases",
-      "career_player_key",
       "circuit",
       "setting",
       "state",
+      "class_year",
     ],
     sortBy: "pts_pg",
     sortDir: "desc",
@@ -1215,7 +1208,7 @@ const DATASETS = {
       { id: "circuit", label: "Circuit", column: "circuit", sort: GRASSROOTS_CIRCUIT_ORDER },
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
     ],
-    defaultVisible: ["rank", "season", "setting", "state", "age_range", "class_year", "event_name", "circuit", "player_name", "team_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
+    defaultVisible: ["rank", "season", "circuit", "player_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
     labels: {
       rank: "",
       season: "Year",
@@ -2515,10 +2508,9 @@ function scheduleGrassrootsScopePrefetch(dataset, scope) {
     }
   };
   if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(run, { timeout: 4000 });
-  } else {
-    window.setTimeout(run, 1200);
+    window.requestIdleCallback(run, { timeout: 250 });
   }
+  window.setTimeout(run, 0);
 }
 
 function startGrassrootsScopeLoad(dataset, state, scope) {
@@ -5852,47 +5844,43 @@ function getGrassrootsSearchIndexForRows(dataset, rows) {
   if (cacheOwner?._grassrootsSearchIndex?.key === cacheKey) return cacheOwner._grassrootsSearchIndex;
 
   const exact = new Map();
+  const token = new Map();
   const add = (map, key, rowIndex) => {
     if (!key) return;
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(rowIndex);
   };
+  const addSearchValue = (value, rowIndex) => {
+    const raw = getStringValue(value).trim();
+    if (!raw) return;
+    raw.split(/\s*\/\s*/).forEach((part) => {
+      const exactKey = normalizeGrassrootsSearchValue(part);
+      if (!exactKey) return;
+      add(exact, exactKey, rowIndex);
+      exactKey.split(" ").forEach((word) => {
+        if (word.length < 3) return;
+        add(token, word, rowIndex);
+      });
+    });
+  };
 
   sourceRows.forEach((row, rowIndex) => {
-    const exactValues = [
+    [
       row.player_name,
       row.player_search_text,
-      row.player_aliases,
       row.team_name,
-      row.team_full,
       row.team_search_text,
-      row.team_aliases,
       row.event_name,
       row.event_group,
-      row.event_raw_name,
-      row.event_aliases,
       row.circuit,
       row.setting,
       row.state,
-      row.pos,
       row.class_year,
       row.age_range,
-      row.level,
-    ];
-    const seenExact = new Set();
-    exactValues.forEach((value) => {
-      String(value ?? "")
-        .split(/\s*\/\s*/)
-        .forEach((part) => {
-          const key = normalizeGrassrootsSearchValue(part);
-          if (!key || seenExact.has(key)) return;
-          seenExact.add(key);
-          add(exact, key, rowIndex);
-      });
-    });
+    ].forEach((value) => addSearchValue(value, rowIndex));
   });
 
-  cacheOwner._grassrootsSearchIndex = { key: cacheKey, exact };
+  cacheOwner._grassrootsSearchIndex = { key: cacheKey, exact, token };
   return cacheOwner._grassrootsSearchIndex;
 }
 
@@ -5910,45 +5898,15 @@ function getGrassrootsSearchRows(dataset, searchClauses, rows = dataset?.rows) {
   searchClauses.forEach((clause) => {
     const phrase = normalizeGrassrootsSearchValue(clause);
     if (!phrase) return;
-    if (index) {
-      const rowIndexes = index.exact.get(phrase) || [];
-      rowIndexes.forEach((rowIndex) => {
-        if (seen.has(rowIndex)) return;
-        seen.add(rowIndex);
-        if (sourceRows[rowIndex]) matched.push(sourceRows[rowIndex]);
-      });
-      return;
-    }
-    sourceRows.forEach((row, rowIndex) => {
+    if (!index) return;
+    const phraseTokens = phrase.split(" ").filter(Boolean);
+    const rowIndexes = phraseTokens.length > 1
+      ? (index.exact.get(phrase) || [])
+      : (index.token.get(phrase) || index.exact.get(phrase) || []);
+    rowIndexes.forEach((rowIndex) => {
       if (seen.has(rowIndex)) return;
-      const values = [
-        row.player_name,
-        row.player_search_text,
-        row.player_aliases,
-        row.team_name,
-        row.team_full,
-        row.team_search_text,
-        row.team_aliases,
-        row.event_name,
-        row.event_group,
-        row.event_raw_name,
-        row.event_aliases,
-        row.circuit,
-        row.setting,
-        row.state,
-        row.pos,
-        row.class_year,
-        row.age_range,
-        row.level,
-      ];
-      const matches = values.some((value) => {
-        const text = getStringValue(value).trim();
-        if (!text) return false;
-        return text.split(/\s*\/\s*/).some((part) => normalizeGrassrootsSearchValue(part) === phrase);
-      });
-      if (!matches) return;
       seen.add(rowIndex);
-      matched.push(row);
+      if (sourceRows[rowIndex]) matched.push(sourceRows[rowIndex]);
     });
   });
 
@@ -5959,6 +5917,25 @@ function getGrassrootsSearchRows(dataset, searchClauses, rows = dataset?.rows) {
   }
 
   return matched;
+}
+
+function scheduleGrassrootsSearchWarmup(dataset, rows, cacheKey) {
+  if (!dataset || dataset.id !== "grassroots" || !Array.isArray(rows) || !rows.length) return;
+  const warmKey = `${String(cacheKey || "")}|${rows.length}`;
+  if (dataset._grassrootsSearchWarmupKey === warmKey) return;
+  dataset._grassrootsSearchWarmupKey = warmKey;
+  const run = () => {
+    try {
+      getGrassrootsSearchIndexForRows(dataset, rows);
+    } catch (error) {
+      console.warn("Grassroots search warmup failed.", error);
+    }
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 1500 });
+  } else {
+    window.setTimeout(run, 600);
+  }
 }
 
 function getRowSearchHaystack(dataset, row) {
@@ -6079,6 +6056,7 @@ function getCareerRowsCacheKey(dataset, state) {
 function buildCareerRows(dataset, state) {
   const cacheKey = getCareerRowsCacheKey(dataset, state);
   if (state._careerCache?.key === cacheKey) {
+    scheduleGrassrootsSearchWarmup(dataset, state._careerCache.rows, cacheKey);
     return state._careerCache.rows;
   }
 
@@ -6101,6 +6079,7 @@ function buildCareerRows(dataset, state) {
   applyPerNormalization(careerRows, dataset.id);
   populateDefenseRatePercentiles(careerRows, dataset.id);
   state._careerCache = { key: cacheKey, rows: careerRows };
+  scheduleGrassrootsSearchWarmup(dataset, careerRows, cacheKey);
   return careerRows;
 }
 
@@ -6982,7 +6961,7 @@ function getColumnWidth(column, dataset) {
   if (dataset.id === "grassroots" && baseColumn === "event_name") return 96;
   if (baseColumn === "event_group") return 220;
   if (baseColumn === "event_raw_name") return 260;
-  if (baseColumn === "setting") return 72;
+  if (baseColumn === "setting") return 62;
   if (baseColumn === "state") return 44;
   if (dataset.id === "grassroots" && baseColumn === "circuit") return 92;
   if (baseColumn === "ftm_fga") return 54;
