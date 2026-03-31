@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Stat Explorers</title>
   <meta name="description" content="D1, D2, NAIA, JUCO, FIBA, and NBA stat explorers in one basic webapp.">
   <link rel="stylesheet" href="styles.css">
@@ -126,6 +129,12 @@
     </section>
   </template>
 
-  <script src="app.js"></script>
+  <script>
+    (function () {
+      const script = document.createElement("script");
+      script.src = `app.js?v=${Date.now()}`;
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>

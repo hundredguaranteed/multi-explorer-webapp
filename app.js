@@ -169,6 +169,27 @@ const NAIA_DIVISION_ALIASES = {
   "wvu tech wv": "west virginia tech",
 };
 const COMMON_ABBREV_NAME_TOKENS = new Set(["aj", "bj", "cj", "dj", "ej", "gj", "jc", "jd", "jj", "jk", "jl", "jm", "jp", "jr", "jt", "kj", "mj", "oj", "pj", "rj", "tj"]);
+const GRASSROOTS_CIRCUIT_ORDER = [
+  "General HS",
+  "Hoophall",
+  "Grind Session",
+  "OTE",
+  "EPL",
+  "Montverde",
+  "EYBL",
+  "3SSB",
+  "Nike Other",
+  "UAA",
+  "NBPA 100",
+  "Puma",
+];
+const GRASSROOTS_HS_CIRCUITS = new Set(["General HS", "Hoophall", "Grind Session", "OTE", "EPL", "Montverde"].map((value) => normalizeKey(value)));
+const GRASSROOTS_AAU_CIRCUITS = new Set(["EYBL", "3SSB", "Nike Other", "UAA", "NBPA 100", "Puma"].map((value) => normalizeKey(value)));
+const GRASSROOTS_SETTING_OPTIONS = [
+  { value: "all", label: "Overall" },
+  { value: "HS", label: "HS" },
+  { value: "AAU", label: "AAU" },
+];
 
 let naiaDivisionLookup = null;
 let naiaDivisionTeamLookup = null;
@@ -1137,7 +1158,7 @@ const DATASETS = {
     playerColumn: "player_name",
     teamColumn: "team_name",
     lockedColumns: ["rank", "season", "age_range", "circuit", "player_name", "team_name"],
-    searchColumns: ["player_name", "player_search_text", "team_name", "team_search_text", "age_range", "level", "event_name", "circuit"],
+    searchColumns: ["player_name", "player_search_text", "team_name", "team_search_text", "age_range", "level", "event_name", "circuit", "setting"],
     sortBy: "pts_pg",
     sortDir: "desc",
     defaultAllYears: true,
@@ -1152,22 +1173,25 @@ const DATASETS = {
       { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"], defaultColumns: ["pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"] },
     ],
     singleFilters: withSharedSingleFilters([
-      { id: "circuit", label: "Circuit", column: "circuit" },
+      { id: "setting", label: "Setting", column: "setting", options: GRASSROOTS_SETTING_OPTIONS },
       { id: "age_range", label: "Age", column: "age_range", options: [{ value: "all", label: "All Ages" }, { value: "17U", label: "17U" }, { value: "16U", label: "16U" }, { value: "15U", label: "15U" }] },
       { id: "class_year", label: "Class", column: "class_year" },
+      { id: "event_name", label: "Event Name", column: "event_name" },
     ]),
     multiFilters: [
+      { id: "circuit", label: "Circuit", column: "circuit", sort: GRASSROOTS_CIRCUIT_ORDER },
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
     ],
-    defaultVisible: ["rank", "season", "age_range", "circuit", "player_name", "team_name", "pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "ftm_fga", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"],
+    defaultVisible: ["rank", "season", "age_range", "setting", "circuit", "event_name", "player_name", "team_name", "pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "ftm_fga", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "pts_per40", "trb_per40", "ast_per40", "stl_per40", "blk_per40", "stocks_per40"],
     labels: {
       rank: "",
       season: "Year",
       event_total_players: "Field",
       age_range: "Age",
       level: "Level",
+      setting: "Setting",
       circuit: "Circuit",
-      event_name: "Event",
+      event_name: "Event Name",
       player_name: "Player",
       team_name: "Team",
       pos: "Pos",
@@ -4576,8 +4600,21 @@ function renderYearPills(dataset, state) {
 
 function renderTeamSelect(dataset, state) {
   const current = state.team;
-  const teamRows = getFilterContextRows(dataset, state, { ignoreTeam: true, ignoreSearch: true, ignoreNumericFilters: true, ignoreDemoFilters: true, skipSort: true });
-  const teams = Array.from(new Set(teamRows.map((row) => getStringValue(row[dataset.teamColumn])).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const teamRows = getRawFilterContextRows(dataset, state, { ignoreTeam: true, ignoreSearch: true, ignoreNumericFilters: true, ignoreDemoFilters: true, skipSort: true });
+  const teamMap = new Map();
+  teamRows.forEach((row) => {
+    const team = getStringValue(row[dataset.teamColumn]).trim();
+    if (!team) return;
+    const key = normalizeKey(team);
+    const currentTeam = teamMap.get(key);
+    if (!currentTeam || team.length >= currentTeam.length) {
+      teamMap.set(key, team);
+    }
+  });
+  if (current !== "all") {
+    teamMap.set(normalizeKey(current), current);
+  }
+  const teams = Array.from(teamMap.values()).sort((a, b) => a.localeCompare(b));
   const options = ['<option value="all">All teams</option>'].concat(
     teams.map((team) => {
       const selected = current === team ? " selected" : "";
@@ -4612,7 +4649,15 @@ function renderExtraFilters(dataset, state) {
   elements.multiSelectFilters.innerHTML = (dataset.multiFilters || [])
     .map((filter) => {
       const selected = state.multiSelects[filter.id] || new Set();
-      const pills = getMultiFilterOptions(dataset, filter, state)
+      const options = getMultiFilterOptions(dataset, filter, state);
+      if (filter.id === "circuit") {
+        const selectOptions = options
+          .map((option) => `<option value="${escapeAttribute(option)}"${selected.has(option) ? " selected" : ""}>${escapeHtml(option)}</option>`)
+          .join("");
+        const size = Math.min(Math.max(options.length, 4), 10);
+        return `<div class="field-stack field-stack--compact field-stack--inline"><label class="field-label field-label--inline" for="multi-${escapeAttribute(filter.id)}">${escapeHtml(filter.label)}</label><select class="form-control" id="multi-${escapeAttribute(filter.id)}" data-multi-filter-select="${escapeAttribute(filter.id)}" multiple size="${size}">${selectOptions}</select></div>`;
+      }
+      const pills = options
         .map((option) => `<button class="pill-toggle ${selected.has(option) ? "is-active" : ""}" type="button" data-multi-filter="${escapeAttribute(filter.id)}" data-multi-value="${escapeAttribute(option)}">${escapeHtml(option)}</button>`)
         .join("");
       return `<div class="multi-pill-group"><div class="multi-pill-group__label">${escapeHtml(filter.label)}</div><div class="pill-grid">${pills}</div></div>`;
@@ -4632,20 +4677,23 @@ function renderExtraFilters(dataset, state) {
   elements.singleSelectFilters.querySelectorAll("[data-single-filter]").forEach((select) => {
     select.addEventListener("change", async () => {
       try {
-        const filterId = select.dataset.singleFilter;
-        state.extraSelects[filterId] = select.value;
-        if (filterId === "view_mode") {
-          state.team = "all";
-          if (select.value === "career") {
-            const years = getAvailableYears(dataset);
-            await ensureDatasetYearsLoaded(dataset, years);
-            state.years = new Set(years);
-          }
+      const filterId = select.dataset.singleFilter;
+      state.extraSelects[filterId] = select.value;
+      if (filterId === "view_mode") {
+        state.team = "all";
+        if (select.value === "career") {
+          const years = getAvailableYears(dataset);
+          await ensureDatasetYearsLoaded(dataset, years);
+          state.years = new Set(years);
         }
-        if (filterId === "status_path" && select.value !== "all") {
-          if (!dataset._statusAnnotated) {
-            elements.statusPill.textContent = `Loading ${dataset.navLabel} status`;
-            await ensureStatusAnnotations(dataset.id);
+      } else if (filterId === "setting") {
+        state.team = "all";
+        state.multiSelects.circuit = new Set();
+      }
+      if (filterId === "status_path" && select.value !== "all") {
+        if (!dataset._statusAnnotated) {
+          elements.statusPill.textContent = `Loading ${dataset.navLabel} status`;
+          await ensureStatusAnnotations(dataset.id);
             if (appState.currentId !== dataset.id) return;
             resetUiCaches(state);
           }
@@ -4670,6 +4718,16 @@ function renderExtraFilters(dataset, state) {
       renderCurrentDataset();
     });
   });
+
+  elements.multiSelectFilters.querySelectorAll("[data-multi-filter-select]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const filterId = select.dataset.multiFilterSelect;
+      if (!filterId) return;
+      const selected = new Set(Array.from(select.selectedOptions || []).map((option) => option.value).filter(Boolean));
+      state.multiSelects[filterId] = selected;
+      renderCurrentDataset();
+    });
+  });
 }
 
 function getSingleFilterOptions(dataset, filter, state) {
@@ -4685,11 +4743,22 @@ function getSingleFilterOptions(dataset, filter, state) {
       ...conferences.map((conference) => ({ value: `conf:${conference}`, label: conference })),
     ];
   }
-  const values = Array.from(new Set(dataset.rows.map((row) => getStringValue(row[filter.column])).filter((value) => value && value !== "Unknown"))).sort(compareFilterValues);
+  const sourceRows = filter.id === "event_name"
+    ? getRawFilterContextRows(dataset, state, { ignoreSingleFilterId: filter.id, skipSort: true })
+    : dataset.rows;
+  const values = Array.from(new Set(sourceRows.map((row) => getStringValue(row[filter.column])).filter((value) => value && value !== "Unknown"))).sort(compareFilterValues);
   return [{ value: "all", label: "All" }, ...values.map((value) => ({ value, label: value }))];
 }
 
 function getMultiFilterOptions(dataset, filter, state) {
+  if (dataset.id === "grassroots" && filter.id === "circuit") {
+    const selectedSetting = getStringValue(state?.extraSelects?.setting).trim();
+    const allowedCircuits = getGrassrootsCircuitsForSetting(selectedSetting);
+    const values = Array.isArray(filter.sort)
+      ? filter.sort.slice()
+      : Array.from(new Set(dataset.rows.map((row) => getStringValue(row[filter.column])).filter(Boolean)));
+    return allowedCircuits ? values.filter((value) => allowedCircuits.has(normalizeKey(value))) : values;
+  }
   const values = Array.from(new Set(dataset.rows.map((row) => getStringValue(row[filter.column])).filter(Boolean)));
   if (Array.isArray(filter.sort)) {
     return filter.sort.slice();
@@ -4967,7 +5036,7 @@ function renderTableLegend(dataset, state) {
 function getFilteredRows(dataset, state) {
   const cache = getRenderCache(state);
   const key = [
-    getDisplayRowsCacheKey(state),
+    getDisplayRowsCacheKey(dataset, state),
     getStringValue(state.team),
     state.search.trim().toLowerCase(),
     getStringValue(state.sortBy),
@@ -5031,6 +5100,12 @@ function getFilterContextRows(dataset, state, options = {}) {
       if (options.ignoreMultiFilterId && filter.id === options.ignoreMultiFilterId) continue;
       const selected = state.multiSelects[filter.id];
       if (!selected || !selected.size) continue;
+      if (filter.id === "circuit" && dataset.id === "grassroots" && state.extraSelects.view_mode === "career") {
+        const rowCircuit = normalizeKey(row.circuit || row[filter.column]);
+        const matchesCircuit = Array.from(selected).some((value) => rowCircuit.includes(normalizeKey(value)));
+        if (!matchesCircuit) return false;
+        continue;
+      }
       if (!selected.has(getStringValue(row[filter.column]))) return false;
     }
 
@@ -5069,6 +5144,13 @@ function getFilterContextRows(dataset, state, options = {}) {
   return options.skipSort ? filtered : sortRows(filtered, state.sortBy, state.sortDir, dataset, state.sortBlankMode);
 }
 
+function getRawFilterContextRows(dataset, state, options = {}) {
+  const rawState = state?.extraSelects?.view_mode === "career"
+    ? { ...state, extraSelects: { ...state.extraSelects, view_mode: "player" } }
+    : state;
+  return getFilterContextRows(dataset, rawState, { ...options, rows: options.rows || dataset.rows });
+}
+
 function parseSearchTerms(value) {
   return getStringValue(value)
     .split(/\s*(?:&&|,|;)\s*/)
@@ -5092,10 +5174,20 @@ function getRenderCache(state) {
   return state._renderCache;
 }
 
-function getDisplayRowsCacheKey(state) {
+function getDisplayRowsCacheKey(dataset, state) {
   const yearsKey = Array.from(state?.years || []).sort(compareYears).join("|");
   const viewMode = getStringValue(state?.extraSelects?.view_mode || "season");
-  return `${viewMode}|${yearsKey}`;
+  if (viewMode !== "career") return `${viewMode}|${yearsKey}`;
+  return [
+    viewMode,
+    yearsKey,
+    getStringValue(state?.team),
+    getStringValue(state?.search).trim().toLowerCase(),
+    serializeSingleFilterState(dataset, state),
+    serializeMultiFilterState(dataset, state),
+    serializeRangeFilters(dataset?.meta?.demoFilterMeta?.map((item) => item.column) || [], state?.demoFilters),
+    serializeRangeFilters(dataset?.meta?.numericColumns || [], state?.numericFilters),
+  ].join("|");
 }
 
 function serializeSingleFilterState(dataset, state) {
@@ -5134,7 +5226,7 @@ function getVisibleColumns(dataset, state) {
 
 function getDisplayRows(dataset, state) {
   const cache = getRenderCache(state);
-  const key = getDisplayRowsCacheKey(state);
+  const key = getDisplayRowsCacheKey(dataset, state);
   if (cache.displayRowsKey === key) return cache.displayRows;
   const rows = state.extraSelects.view_mode === "career" ? buildCareerRows(dataset, state) : dataset.rows;
   cache.displayRowsKey = key;
@@ -5143,13 +5235,12 @@ function getDisplayRows(dataset, state) {
 }
 
 function buildCareerRows(dataset, state) {
-  const yearsKey = Array.from(state.years).sort(compareYears).join("|");
-  const cacheKey = `${dataset.id}|${yearsKey}`;
+  const cacheKey = getDisplayRowsCacheKey(dataset, state);
   if (state._careerCache?.key === cacheKey) {
     return state._careerCache.rows;
   }
 
-  const scopedRows = dataset.rows.filter((row) => !state.years.size || state.years.has(getStringValue(row[dataset.yearColumn])));
+  const scopedRows = getRawFilterContextRows(dataset, state, { skipSort: true });
   const grouped = new Map();
   scopedRows.forEach((row) => {
     const key = getCareerGroupKey(dataset, row);
@@ -5201,6 +5292,33 @@ function getGrassrootsCareerAliasKey(rowsOrRow) {
   return [lastName, heightKey, weightKey, pos].join("|");
 }
 
+function getGrassrootsSettingForCircuit(circuit) {
+  const key = normalizeKey(circuit);
+  if (!key) return "";
+  if (GRASSROOTS_AAU_CIRCUITS.has(key)) return "AAU";
+  if (GRASSROOTS_HS_CIRCUITS.has(key)) return "HS";
+  if (/(eybl|3ssb|nike|nbpa|puma|uaa)/i.test(key)) return "AAU";
+  return "HS";
+}
+
+function getGrassrootsCircuitsForSetting(setting) {
+  const normalized = normalizeKey(setting);
+  if (!normalized || normalized === "all" || normalized === "overall") return null;
+  if (normalized === "aau") return GRASSROOTS_AAU_CIRCUITS;
+  if (normalized === "hs") return GRASSROOTS_HS_CIRCUITS;
+  return null;
+}
+
+function sortGrassrootsDisplayValues(values, preferredOrder = []) {
+  const orderIndex = new Map(preferredOrder.map((value, index) => [normalizeKey(value), index]));
+  return Array.from(values).sort((left, right) => {
+    const leftIndex = orderIndex.has(normalizeKey(left)) ? orderIndex.get(normalizeKey(left)) : Number.POSITIVE_INFINITY;
+    const rightIndex = orderIndex.has(normalizeKey(right)) ? orderIndex.get(normalizeKey(right)) : Number.POSITIVE_INFINITY;
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return compareFilterValues(left, right);
+  });
+}
+
 function grassrootsAliasRowScore(row) {
   let score = countMeaningfulRowFields(row);
   if (getNameLastToken(row.player_name || row.player)) score += 50;
@@ -5227,7 +5345,10 @@ function aggregateCareerRows(dataset, rows) {
   const minuteWeights = new Array(rows.length);
   const defaultWeights = new Array(rows.length);
   const playerSearchValues = new Set();
-  const teamSearchValues = new Set();
+  const teamSearchValues = new Map();
+  const eventValues = new Map();
+  const circuitValues = new Map();
+  const settingValues = new Map();
   const coachSearchValues = new Set();
   const competitionLabels = new Set();
   rows.forEach((row, index) => {
@@ -5236,8 +5357,24 @@ function aggregateCareerRows(dataset, rows) {
     }
     const playerText = getStringValue(row.player_search_text || row.player_name || row.player).trim();
     if (playerText) playerSearchValues.add(playerText);
-    const teamText = getStringValue(row.team_search_text || row[dataset.teamColumn]).trim();
-    if (teamText) teamSearchValues.add(teamText);
+    const teamText = dataset.id === "grassroots"
+      ? getStringValue(row.team_full || row[dataset.teamColumn]).trim()
+      : getStringValue(row.team_search_text || row[dataset.teamColumn]).trim();
+    if (teamText) {
+      const teamKey = normalizeKey(teamText);
+      const currentTeamText = teamSearchValues.get(teamKey);
+      if (!currentTeamText || teamText.length >= currentTeamText.length) {
+        teamSearchValues.set(teamKey, teamText);
+      }
+    }
+    if (dataset.id === "grassroots") {
+      const eventText = getStringValue(row.event_name).trim();
+      if (eventText) eventValues.set(normalizeKey(eventText), eventText);
+      const circuitText = getStringValue(row.circuit).trim();
+      if (circuitText) circuitValues.set(normalizeKey(circuitText), circuitText);
+      const settingText = getStringValue(row.setting || getGrassrootsSettingForCircuit(row.circuit)).trim();
+      if (settingText) settingValues.set(normalizeKey(settingText), settingText);
+    }
     const coachText = getStringValue(row.coach_search_text || row.coach).trim();
     if (coachText) coachSearchValues.add(coachText);
     if (dataset.id === "fiba") {
@@ -5250,7 +5387,10 @@ function aggregateCareerRows(dataset, rows) {
   });
   const plans = getCareerAggregationPlans(dataset);
   const aggregate = latest ? Object.create(latest) : {};
-  const mergedTeams = Array.from(teamSearchValues);
+  const mergedTeams = sortGrassrootsDisplayValues(teamSearchValues.values(), []);
+  const mergedEvents = sortGrassrootsDisplayValues(eventValues.values(), []);
+  const mergedCircuits = sortGrassrootsDisplayValues(circuitValues.values(), GRASSROOTS_CIRCUIT_ORDER);
+  const mergedSettings = sortGrassrootsDisplayValues(settingValues.values(), ["HS", "AAU"]);
   const preferredPlayerName = dataset.id === "grassroots" ? getPreferredStatusName(rows) : "";
 
   plans.forEach((plan) => {
@@ -5325,6 +5465,9 @@ function aggregateCareerRows(dataset, rows) {
   aggregate[dataset.yearColumn] = latest[dataset.yearColumn];
   aggregate[dataset.teamColumn] = dataset.id === "grassroots" ? mergedTeams.join(" / ") : latest[dataset.teamColumn];
   if (dataset.id === "grassroots") {
+    if (mergedEvents.length) aggregate.event_name = mergedEvents.join(" / ");
+    if (mergedCircuits.length) aggregate.circuit = mergedCircuits.join(" / ");
+    if (mergedSettings.length) aggregate.setting = mergedSettings.join(" / ");
     aggregate.team_full = aggregate[dataset.teamColumn];
     if (preferredPlayerName) {
       aggregate.player_name = preferredPlayerName;
@@ -5624,6 +5767,7 @@ function getColumnWidth(column, dataset) {
   if (baseColumn === dataset.yearColumn || baseColumn === "season") return 48;
   if (baseColumn === "age_range") return 52;
   if (baseColumn === "event_name") return 180;
+  if (baseColumn === "setting") return 52;
   if (baseColumn === "circuit") return 56;
   if (baseColumn === "ftm_fga") return 54;
   if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
@@ -5647,7 +5791,7 @@ function getColumnWidth(column, dataset) {
 function getColorPopulation(dataset, state) {
   const cache = getRenderCache(state);
   const scoped = getDisplayRows(dataset, state);
-  const key = `${cache.displayRowsKey || getDisplayRowsCacheKey(state)}|${getQualifiedMinuteThreshold(dataset, state)}`;
+  const key = `${cache.displayRowsKey || getDisplayRowsCacheKey(dataset, state)}|${getQualifiedMinuteThreshold(dataset, state)}`;
   if (cache.colorRowsKey === key) return cache.colorRows;
   const qualified = scoped.filter((row) => getMinutesValue(row) >= getQualifiedMinuteThreshold(dataset, state));
   const rows = qualified.length >= 10 ? qualified : scoped;
@@ -5755,7 +5899,7 @@ function getColorScale(dataset, state, visibleColumns) {
   const cache = getRenderCache(state);
   const colorRows = getColorPopulation(dataset, state);
   const key = [
-    cache.colorRowsKey || `${getDisplayRowsCacheKey(state)}|${getQualifiedMinuteThreshold(dataset, state)}`,
+    cache.colorRowsKey || `${getDisplayRowsCacheKey(dataset, state)}|${getQualifiedMinuteThreshold(dataset, state)}`,
     getStringValue(state.extraSelects?.color_mode || "year"),
     colorColumns.join("|"),
   ].join("||");
@@ -6226,6 +6370,10 @@ function enhanceCommonRow(row, datasetId) {
     if (datasetId !== "grassroots") row.team_name = simplifySchoolName(row.team_name, datasetId);
   }
 
+  if (datasetId === "grassroots") {
+    row.setting = getGrassrootsSettingForCircuit(row.circuit);
+  }
+
   if (!Number.isFinite(row.height_in) && Number.isFinite(row.inches)) row.height_in = row.inches;
   if (!Number.isFinite(row.inches) && Number.isFinite(row.height_in)) row.inches = row.height_in;
   if (!Number.isFinite(row.height_in) && typeof row.height === "string") {
@@ -6353,6 +6501,23 @@ function enhanceCollegeRow(row, datasetId) {
     row.region = getStringValue(row.region).replace(/\.0$/, "");
     row.level = normalizeJucoDivision(row.level);
   }
+  if (datasetId === "grassroots") {
+    const threePm = Math.max(0, firstFinite(row.tpm, row["3pm"], row.three_pm, 0));
+    if (!Number.isFinite(row.tpm)) row.tpm = threePm;
+    const inferredTwoPm = firstFinite(
+      row["2pm"],
+      row.two_pm,
+      Number.isFinite(row.fgm) ? Math.max(0, row.fgm - threePm) : Number.NaN
+    );
+    const twoPm = Number.isFinite(inferredTwoPm) ? Math.max(0, inferredTwoPm) : Number.NaN;
+    if (Number.isFinite(twoPm)) {
+      row["2pm"] = twoPm;
+      row.two_pm = twoPm;
+    }
+    const rawFtm = firstFinite(row.ftm, Number.NaN);
+    const derivedFtm = Number.isFinite(row.pts) ? Math.max(0, row.pts - (2 * twoPm) - (3 * threePm)) : Number.NaN;
+    row.ftm = Number.isFinite(derivedFtm) ? derivedFtm : (Number.isFinite(rawFtm) ? Math.max(0, rawFtm) : 0);
+  }
   scaleRateColumns(row, ["fg_pct", "2p_pct", "tp_pct", "ft_pct", "efg_pct", "ts_pct", "orb_pct", "drb_pct", "trb_pct", "ast_pct", "stl_pct", "blk_pct", "tov_pct", "usg_pct"], datasetId);
   populateDerivedShooting(row, {
     threeMadeKeys: ["tpm", "3pm", "three_pm"],
@@ -6383,9 +6548,13 @@ function enhanceCollegeRow(row, datasetId) {
   row.ftr = ratioIfPossible(row.fta, row.fga);
   row.three_pr = ratioIfPossible(row.tpa ?? row["3pa"] ?? row.three_pa, row.fga);
   if (datasetId === "grassroots") {
-    row.ftm_fga = ratioIfPossible(row.ftm, row.fga);
-    if (Number.isFinite(row.three_pr) && Number.isFinite(row.ftm_fga)) {
-      row.three_pr_plus_ftm_fga = roundNumber(row.three_pr + row.ftm_fga, 3);
+    row.ftm_pg = perGameValue(row.ftm, row.gp);
+    const ftmFga = ratioIfPossible(row.ftm, row.fga);
+    row.ftm_fga = Number.isFinite(ftmFga) ? Math.max(0, ftmFga) : "";
+    const threePr = Number.isFinite(row.three_pr) ? Math.max(0, row.three_pr) : Number.NaN;
+    if (Number.isFinite(threePr)) row.three_pr = threePr;
+    if (Number.isFinite(threePr) && Number.isFinite(row.ftm_fga)) {
+      row.three_pr_plus_ftm_fga = roundNumber(threePr + row.ftm_fga, 3);
     }
   }
   row.three_pa_per100 = possPer100Value(row.tpa ?? row["3pa"] ?? row.three_pa, row);
