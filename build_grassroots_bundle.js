@@ -32,6 +32,39 @@ const LEGACY_SOURCES = [
   { circuit: "General HS", file: path.join(rootDir, "general_hs_all_event_player_stats_clean.csv"), include: () => true },
 ];
 const YEARLY_MANIFEST_FILE = path.join(__dirname, "yearly_event_exports", "cerebro_yearly_manifest.csv");
+const RAW_ROW_KEY_COLUMNS = [
+  "event_name",
+  "event_url",
+  "event_total_players",
+  "page_index",
+  "Rank",
+  "Player",
+  "Team",
+  "POS",
+  "Class",
+  "HT",
+  "WT",
+  "Games",
+  "MIN/G",
+  "RAM",
+  "C-RAM",
+  "USG%",
+  "PSP",
+  "PTS/G",
+  "FG%",
+  "3PE",
+  "3PM/G",
+  "3PT%",
+  "FGS",
+  "AST/G",
+  "TOV",
+  "ATR",
+  "REB/G",
+  "BLK/G",
+  "DSI",
+  "STL/G",
+  "PF/G",
+];
 
 const outputFile = path.join(__dirname, "data", "vendor", "grassroots_all_seasons.js");
 const circuitOrder = new Map([
@@ -164,6 +197,16 @@ function parseAgeRange(eventName, teamName) {
   return "17U";
 }
 
+function inferGrassrootsClassYear(rawClass, season, ageRange) {
+  const numericClass = Number(rawClass);
+  if (Number.isFinite(numericClass) && numericClass >= 1000) return numericClass;
+  const numericSeason = Number(season);
+  const match = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
+  const ageValue = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isFinite(numericSeason) || !Number.isFinite(ageValue) || ageValue <= 0) return "";
+  return numericSeason + Math.max(0, 18 - ageValue);
+}
+
 function ageSortValue(ageRange) {
   const match = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
   return match ? Number(match[1]) : 0;
@@ -228,6 +271,7 @@ function classifyGrassrootsCircuit(eventName) {
     return "Nike Other";
   }
   if (/3SSB|adidas/i.test(text)) return "3SSB";
+  if (/nxt\s*pro/i.test(text)) return "Puma";
   if (/\bUAA\b|under armour/i.test(text)) return "UAA";
   if (/puma/i.test(text)) return "Puma";
   if (/overtime elite|\bote\b/i.test(text)) return "OTE";
@@ -259,118 +303,25 @@ function loadManifestSourceFiles() {
   return files;
 }
 
-function loadGrassrootsRowsFromFile(file, circuitResolver, seenEventUrls, filterFn = () => true) {
+function buildGrassrootsRowKey(row, circuit) {
+  return [circuit, ...RAW_ROW_KEY_COLUMNS.map((column) => String(row[column] ?? ""))].join("\u0001");
+}
+
+function loadGrassrootsRowsFromFile(file, circuitResolver, seenRowKeys, filterFn = () => true) {
   if (!fs.existsSync(file)) return 0;
   const parsed = parseCSV(fs.readFileSync(file, "utf8"));
   let added = 0;
   parsed.forEach((row) => {
     if (!filterFn(row)) return;
-    const eventUrl = String(row.event_url ?? "").trim();
-    if (!eventUrl || seenEventUrls.has(eventUrl)) return;
     const circuit = circuitResolver(row);
     if (!circuit) return;
-    seenEventUrls.add(eventUrl);
+    const rowKey = buildGrassrootsRowKey(row, circuit);
+    if (seenRowKeys.has(rowKey)) return;
+    seenRowKeys.add(rowKey);
     rows.push(mapRow(row, circuit));
     added += 1;
   });
   return added;
-}
-
-function aggregateRows(rows) {
-  const groups = new Map();
-  rows.forEach((row) => {
-    const key = mergeBucketKey(row);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  });
-  return Array.from(groups.values()).map(aggregateGroup);
-}
-
-function aggregateGroup(group) {
-  const leader = group.slice().sort((left, right) => {
-    const leftWeight = Number.isFinite(left.min) ? left.min : Number.isFinite(left.gp) ? left.gp : 0;
-    const rightWeight = Number.isFinite(right.min) ? right.min : Number.isFinite(right.gp) ? right.gp : 0;
-    if (rightWeight !== leftWeight) return rightWeight - leftWeight;
-    return Number(right.gp || 0) - Number(left.gp || 0);
-  })[0] || {};
-  const output = { ...leader };
-  const sumColumns = ["gp", "min", "pts", "fgs", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "ast", "tov", "trb", "blk", "stl", "pf", "stocks"];
-  const weightedColumns = ["ram", "c_ram", "usg_pct", "psp", "atr", "dsi", "three_pe"];
-  const averageColumns = ["class_year", "height_in", "weight_lb", "page_index"];
-  const weights = group.map((row) => {
-    const minutes = Number.isFinite(row.min) ? row.min : "";
-    if (Number.isFinite(minutes) && minutes > 0) return minutes;
-    if (Number.isFinite(row.gp) && row.gp > 0) return row.gp;
-    return 1;
-  });
-
-  sumColumns.forEach((column) => {
-    const total = group.reduce((sum, row) => sum + (Number.isFinite(row[column]) ? row[column] : 0), 0);
-    if (column === "tpm" || column === "tpa") {
-      output[column] = round(total, 1);
-      return;
-    }
-    output[column] = total > 0 ? round(total, 1) : "";
-  });
-
-  weightedColumns.forEach((column) => {
-    let weightedSum = 0;
-    let totalWeight = 0;
-    group.forEach((row, index) => {
-      if (!Number.isFinite(row[column])) return;
-      weightedSum += row[column] * weights[index];
-      totalWeight += weights[index];
-    });
-    output[column] = totalWeight > 0 ? round(weightedSum / totalWeight, 1) : "";
-  });
-
-  averageColumns.forEach((column) => {
-    output[column] = firstNonEmpty(group, column);
-  });
-
-  output.season = firstNonEmpty(group, "season");
-  output.age_range = firstNonEmpty(group, "age_range") || "17U";
-  output.level = output.age_range || "17U";
-  output.circuit = firstNonEmpty(group, "circuit");
-  output.player_name = firstNonEmpty(group, "player_name");
-  output.team_name = firstNonEmpty(group, "team_name");
-  output.pos = firstNonEmpty(group, "pos");
-  output.event_name = uniqueJoined(group, "event_name", true);
-  output.event_url = firstNonEmpty(group, "event_url");
-  output.event_total_players = group.reduce((max, row) => {
-    const value = Number.isFinite(row.event_total_players) ? row.event_total_players : 0;
-    return value > max ? value : max;
-  }, 0) || "";
-  output.page_index = firstNonEmpty(group, "page_index");
-  output.rank = null;
-  output.min = output.min || "";
-  output.mpg = Number.isFinite(output.min) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.min / output.gp, 1) : "";
-  output.pts_pg = Number.isFinite(output.pts) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.pts / output.gp, 1) : "";
-  output.trb_pg = Number.isFinite(output.trb) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.trb / output.gp, 1) : "";
-  output.ast_pg = Number.isFinite(output.ast) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.ast / output.gp, 1) : "";
-  output.tov_pg = Number.isFinite(output.tov) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tov / output.gp, 1) : "";
-  output.stl_pg = Number.isFinite(output.stl) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.stl / output.gp, 1) : "";
-  output.blk_pg = Number.isFinite(output.blk) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.blk / output.gp, 1) : "";
-  output.pf_pg = Number.isFinite(output.pf) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.pf / output.gp, 1) : "";
-  output.stocks_pg = Number.isFinite(output.stocks) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.stocks / output.gp, 1) : "";
-  output.fg_pct = Number.isFinite(output.fgm) && Number.isFinite(output.fga) && output.fga > 0 ? ratio(output.fgm, output.fga) : "";
-  output["2p_pct"] = Number.isFinite(output["2pm"]) && Number.isFinite(output["2pa"]) && output["2pa"] > 0 ? ratio(output["2pm"], output["2pa"]) : "";
-  output.tp_pct = Number.isFinite(output.tpm) && Number.isFinite(output.tpa) && output.tpa > 0 ? ratio(output.tpm, output.tpa) : "";
-  output.three_pr = Number.isFinite(output.tpa) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.tpa / output.fga, 3) : "";
-  output.tpm_pg = Number.isFinite(output.tpm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpm / output.gp, 1) : "";
-  output.tpa_pg = Number.isFinite(output.tpa) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpa / output.gp, 1) : "";
-  output.ftm = Number.isFinite(output.pts) && Number.isFinite(output["2pm"])
-    ? Math.max(0, round(output.pts - (output["2pm"] * 2) - ((Number.isFinite(output.tpm) ? output.tpm : 0) * 3), 1))
-    : "";
-  output.ftm_pg = Number.isFinite(output.ftm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.ftm / output.gp, 1) : "";
-  output.ftm_fga = Number.isFinite(output.ftm) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.ftm / output.fga, 2) : "";
-  output.three_pr_plus_ftm_fga = Number.isFinite(output.three_pr) && Number.isFinite(output.ftm_fga)
-    ? round(output.three_pr + output.ftm_fga, 3)
-    : "";
-  output.atr = Number.isFinite(output.ast) && Number.isFinite(output.tov) && output.tov > 0 ? round(output.ast / output.tov, 2) : "";
-  output.blk_pf = Number.isFinite(output.blk) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.blk / output.pf, 2) : "";
-  output.stocks_pf = Number.isFinite(output.stocks) && Number.isFinite(output.pf) && output.pf > 0 ? round(output.stocks / output.pf, 2) : "";
-  return output;
 }
 
 function mapRow(row, circuit) {
@@ -381,12 +332,25 @@ function mapRow(row, circuit) {
   const tpmPg = toNumber(row["3PM/G"]);
   const tpPct = toPercentNumber(row["3PT%"]);
   const fgm = toNumber(row.FGS);
-  const fga = Number.isFinite(fgm) && Number.isFinite(fgPct) && fgPct > 0 ? round(fgm / (fgPct / 100), 1) : "";
-  const tpm = Number.isFinite(tpmPg) && Number.isFinite(gp) ? round(tpmPg * gp, 1) : 0;
-  const tpa = Number.isFinite(tpm) && Number.isFinite(tpPct) && tpPct > 0 ? round(tpm / (tpPct / 100), 1) : 0;
+  const fga = Number.isFinite(fgm) && Number.isFinite(fgPct)
+    ? (fgPct > 0 ? round(fgm / (fgPct / 100), 1) : (fgm === 0 ? 0 : ""))
+    : "";
+  const tpm = Number.isFinite(tpmPg) && Number.isFinite(gp)
+    ? round(tpmPg * gp, 1)
+    : (Number.isFinite(tpmPg) && tpmPg === 0 ? 0 : "");
+  const tpa = Number.isFinite(tpm) && Number.isFinite(tpPct)
+    ? (tpPct > 0 ? round(tpm / (tpPct / 100), 1) : (tpm === 0 ? 0 : ""))
+    : (Number.isFinite(tpm) && tpm === 0 ? 0 : "");
   const twoPm = Number.isFinite(fgm) && Number.isFinite(tpm) ? round(fgm - tpm, 1) : "";
   const twoPa = Number.isFinite(fga) && Number.isFinite(tpa) ? round(fga - tpa, 1) : "";
   const twoPct = Number.isFinite(twoPm) && Number.isFinite(twoPa) && twoPa > 0 ? round((twoPm / twoPa) * 100, 1) : "";
+  const pts = Number.isFinite(ptsPg) && Number.isFinite(gp) ? round(ptsPg * gp, 1) : (Number.isFinite(ptsPg) && ptsPg === 0 ? 0 : "");
+  const ftmRaw = Number.isFinite(pts) && Number.isFinite(fgm) && Number.isFinite(tpm) ? round(pts - (2 * fgm) - tpm, 1) : "";
+  const ftm = Number.isFinite(ftmRaw) ? Math.max(0, ftmRaw) : "";
+  const ftmPg = Number.isFinite(ftm) && Number.isFinite(gp) ? round(ftm / gp, 1) : "";
+  const ftmFga = Number.isFinite(ftm) && Number.isFinite(fga) && fga > 0 ? round(ftm / fga, 3) : "";
+  const threePr = Number.isFinite(tpa) && Number.isFinite(fga) && fga > 0 ? round(tpa / fga, 3) : "";
+  const threePrPlusFtmFga = Number.isFinite(threePr) && Number.isFinite(ftmFga) ? round(threePr + ftmFga, 3) : "";
   const trbPg = toNumber(row["REB/G"]);
   const astPg = toNumber(row["AST/G"]);
   const tovPg = toNumber(row.TOV);
@@ -401,16 +365,17 @@ function mapRow(row, circuit) {
   const pf = perGameTotal(pfPg, gp);
   const stocks = Number.isFinite(stl) && Number.isFinite(blk) ? round(stl + blk, 1) : "";
   const stocksPg = Number.isFinite(stlPg) && Number.isFinite(blkPg) ? round(stlPg + blkPg, 1) : "";
-  const pts = Number.isFinite(ptsPg) && Number.isFinite(gp) ? round(ptsPg * gp, 1) : "";
   const min = Number.isFinite(mpg) && Number.isFinite(gp) ? round(mpg * gp, 1) : "";
   const heightIn = parseHeight(row.HT);
   const weightLb = toNumber(row.WT);
-  const classYear = toNumber(row.Class);
+  const season = parseSeason(row.event_name);
+  const ageRange = parseAgeRange(row.event_name, row.Team);
+  const classYear = inferGrassrootsClassYear(row.Class, season, ageRange);
   const rank = toNumber(row.Rank);
 
   return {
-    season: parseSeason(row.event_name),
-    age_range: parseAgeRange(row.event_name, row.Team),
+    season,
+    age_range: ageRange,
     circuit,
     event_name: row.event_name || "",
     event_url: row.event_url || "",
@@ -443,6 +408,11 @@ function mapRow(row, circuit) {
     tpa,
     tpm_pg: tpmPg,
     tpa_pg: Number.isFinite(tpa) && Number.isFinite(gp) ? round(tpa / gp, 1) : "",
+    ftm,
+    ftm_pg: ftmPg,
+    ftm_fga: ftmFga,
+    three_pr: threePr,
+    three_pr_plus_ftm_fga: threePrPlusFtmFga,
     tp_pct: tpPct,
     three_pe: toNumber(row["3PE"]),
     ast,
@@ -464,25 +434,23 @@ function mapRow(row, circuit) {
   };
 }
 
-const rows = [];
-const seenEventUrls = new Set();
+  const rows = [];
+const seenRowKeys = new Set();
 const manifestSourceFiles = loadManifestSourceFiles();
 
 if (manifestSourceFiles.length) {
   manifestSourceFiles.forEach((file) => {
-    loadGrassrootsRowsFromFile(file, (row) => inferCircuit("", row), seenEventUrls);
+    loadGrassrootsRowsFromFile(file, (row) => inferCircuit("", row), seenRowKeys);
   });
 } else {
   console.warn("No yearly manifest found; falling back to legacy grassroots sources.");
 }
 
 LEGACY_SOURCES.forEach(({ circuit, file, include }) => {
-  loadGrassrootsRowsFromFile(file, (row) => circuit || inferCircuit("", row), seenEventUrls, include);
+  loadGrassrootsRowsFromFile(file, (row) => circuit || inferCircuit("", row), seenRowKeys, include);
 });
 
-const aggregatedRows = aggregateRows(rows);
-
-aggregatedRows.sort((left, right) => {
+rows.sort((left, right) => {
   const yearDiff = Number(right.season || 0) - Number(left.season || 0);
   if (yearDiff) return yearDiff;
   const ageDiff = ageSortValue(right.age_range) - ageSortValue(left.age_range);
@@ -561,16 +529,16 @@ aggregatedRows.sort((left, right) => {
 
 const csvText = [
   columns.join(","),
-  ...aggregatedRows.map((row) => columns.map((column) => csvEscape(row[column])).join(",")),
+  ...rows.map((row) => columns.map((column) => csvEscape(row[column])).join(",")),
 ].join("\n");
 
 fs.writeFileSync(outputFile, `window.GRASSROOTS_ALL_CSV = ${JSON.stringify(csvText)};\n`, "utf8");
 
-const circuitCounts = aggregatedRows.reduce((acc, row) => {
+const circuitCounts = rows.reduce((acc, row) => {
   acc[row.circuit] = (acc[row.circuit] || 0) + 1;
   return acc;
 }, {});
 
 console.log(`Wrote ${outputFile}`);
-console.log(`Rows: ${aggregatedRows.length}`);
+console.log(`Rows: ${rows.length}`);
 console.log(JSON.stringify(circuitCounts));

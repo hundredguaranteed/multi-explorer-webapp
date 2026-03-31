@@ -4253,6 +4253,7 @@ function normalizePosLabel(value) {
   if (/\bSF\b|WING/.test(text)) return "SF";
   if (/\bPOWER FORWARD\b/.test(text)) return "PF";
   if (/\bPF\b|STRETCH 4/.test(text)) return "PF";
+  if (/^\s*(G\/F|F\/G|GUARD\/FORWARD|FORWARD\/GUARD)\s*$/.test(text)) return "G/F";
   if (/^\s*GUARD\s*$/.test(text)) return "G";
   if (/^\s*FORWARD\s*$/.test(text)) return "F";
   if (/^\s*CENTER\s*$/.test(text)) return "C";
@@ -4657,13 +4658,6 @@ function renderExtraFilters(dataset, state) {
     .map((filter) => {
       const selected = state.multiSelects[filter.id] || new Set();
       const options = getMultiFilterOptions(dataset, filter, state);
-      if (filter.id === "circuit") {
-        const selectOptions = options
-          .map((option) => `<option value="${escapeAttribute(option)}"${selected.has(option) ? " selected" : ""}>${escapeHtml(option)}</option>`)
-          .join("");
-        const size = Math.min(Math.max(options.length, 4), 10);
-        return `<div class="field-stack field-stack--compact field-stack--inline"><label class="field-label field-label--inline" for="multi-${escapeAttribute(filter.id)}">${escapeHtml(filter.label)}</label><select class="form-control" id="multi-${escapeAttribute(filter.id)}" data-multi-filter-select="${escapeAttribute(filter.id)}" multiple size="${size}">${selectOptions}</select></div>`;
-      }
       const pills = options
         .map((option) => `<button class="pill-toggle ${selected.has(option) ? "is-active" : ""}" type="button" data-multi-filter="${escapeAttribute(filter.id)}" data-multi-value="${escapeAttribute(option)}">${escapeHtml(option)}</button>`)
         .join("");
@@ -5113,6 +5107,12 @@ function getFilterContextRows(dataset, state, options = {}) {
         if (!matchesCircuit) return false;
         continue;
       }
+      if (dataset.id === "grassroots" && filter.id === "pos") {
+        const rowPos = normalizePosLabel(row.pos || row[filter.column]);
+        const matchesPos = Array.from(selected).some((value) => grassrootsPosMatchesSelection(rowPos, value));
+        if (!matchesPos) return false;
+        continue;
+      }
       if (!selected.has(getStringValue(row[filter.column]))) return false;
     }
 
@@ -5293,7 +5293,7 @@ function getGrassrootsCareerAliasKey(rowsOrRow) {
   if (!lastName) return "";
   const height = firstFinite(sample.height_in, sample.inches, Number.NaN);
   const weight = firstFinite(sample.weight_lb, sample.weight, Number.NaN);
-  const pos = normalizePosLabel(sample.pos || sample.pos_text);
+  const pos = getGrassrootsPosFamily(rows) || getGrassrootsPosFamily(sample) || normalizePosLabel(sample.pos || sample.pos_text);
   const heightKey = Number.isFinite(height) ? Math.round(height) : "";
   const weightKey = Number.isFinite(weight) ? Math.round(weight / 5) * 5 : "";
   return [lastName, heightKey, weightKey, pos].join("|");
@@ -5314,6 +5314,87 @@ function getGrassrootsCircuitsForSetting(setting) {
   if (normalized === "aau") return GRASSROOTS_AAU_CIRCUITS;
   if (normalized === "hs") return GRASSROOTS_HS_CIRCUITS;
   return null;
+}
+
+function getGrassrootsPosAliases(pos) {
+  const normalized = normalizePosLabel(pos);
+  switch (normalized) {
+    case "PG":
+      return ["PG", "G"];
+    case "SG":
+      return ["SG", "G"];
+    case "G":
+      return ["G", "PG", "SG", "G/F"];
+    case "G/F":
+      return ["G/F", "G", "F"];
+    case "SF":
+      return ["SF", "F"];
+    case "PF":
+      return ["PF", "F"];
+    case "F":
+      return ["F", "SF", "PF", "G/F"];
+    case "C":
+      return ["C"];
+    default:
+      return normalized ? [normalized] : [];
+  }
+}
+
+function splitGrassrootsPosValues(value) {
+  return String(value ?? "")
+    .replace(/\band\b/gi, "/")
+    .split(/[\/,&|+]/)
+    .map((part) => normalizePosLabel(part))
+    .filter(Boolean);
+}
+
+function grassrootsPosMatchesSelection(rowPos, selectedPos) {
+  const selected = normalizePosLabel(selectedPos);
+  if (!selected) return false;
+  const rowValues = splitGrassrootsPosValues(rowPos);
+  if (!rowValues.length) return false;
+  return rowValues.some((value) => {
+    const aliases = getGrassrootsPosAliases(value);
+    return aliases.includes(selected) || getGrassrootsPosAliases(selected).includes(value);
+  });
+}
+
+function getGrassrootsPosFamily(rowsOrRow) {
+  const rows = Array.isArray(rowsOrRow) ? rowsOrRow : [rowsOrRow];
+  let guardScore = 0;
+  let forwardScore = 0;
+  let centerScore = 0;
+
+  rows.forEach((row) => {
+    splitGrassrootsPosValues(row?.pos || row?.pos_text).forEach((value) => {
+      if (["PG", "SG", "G"].includes(value)) {
+        guardScore += 1;
+      } else if (["SF", "PF", "F"].includes(value)) {
+        forwardScore += 1;
+      } else if (value === "G/F") {
+        guardScore += 1;
+        forwardScore += 1;
+      } else if (value === "C") {
+        centerScore += 1;
+      }
+    });
+  });
+
+  if (centerScore && !guardScore && !forwardScore) return "C";
+  if (guardScore && !forwardScore) return "G";
+  if (forwardScore && !guardScore) return "F";
+  if (guardScore && forwardScore) return guardScore >= forwardScore ? "G" : "F";
+  return "";
+}
+
+function inferGrassrootsClassYear(classYear, season, ageRange) {
+  const numericClass = Number(classYear);
+  if (Number.isFinite(numericClass) && numericClass >= 1000) return numericClass;
+  const numericSeason = Number(season);
+  const ageMatch = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
+  const ageValue = ageMatch ? Number(ageMatch[1]) : Number.NaN;
+  if (!Number.isFinite(numericSeason) || !Number.isFinite(ageValue) || ageValue <= 0) return "";
+  return numericSeason + Math.max(0, 18 - ageValue);
 }
 
 function sortGrassrootsDisplayValues(values, preferredOrder = []) {
@@ -5356,6 +5437,7 @@ function aggregateCareerRows(dataset, rows) {
   const eventValues = new Map();
   const circuitValues = new Map();
   const settingValues = new Map();
+  const positionValues = new Map();
   const coachSearchValues = new Set();
   const competitionLabels = new Set();
   rows.forEach((row, index) => {
@@ -5375,6 +5457,8 @@ function aggregateCareerRows(dataset, rows) {
       }
     }
     if (dataset.id === "grassroots") {
+      const posText = getStringValue(row.pos_text || row.pos).trim();
+      if (posText) positionValues.set(normalizeKey(posText), normalizePosLabel(posText));
       const eventText = getStringValue(row.event_name).trim();
       if (eventText) eventValues.set(normalizeKey(eventText), eventText);
       const circuitText = getStringValue(row.circuit).trim();
@@ -5398,6 +5482,7 @@ function aggregateCareerRows(dataset, rows) {
   const mergedEvents = sortGrassrootsDisplayValues(eventValues.values(), []);
   const mergedCircuits = sortGrassrootsDisplayValues(circuitValues.values(), GRASSROOTS_CIRCUIT_ORDER);
   const mergedSettings = sortGrassrootsDisplayValues(settingValues.values(), ["HS", "AAU"]);
+  const mergedPositions = sortGrassrootsDisplayValues(positionValues.values(), ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"]);
   const preferredPlayerName = dataset.id === "grassroots" ? getPreferredStatusName(rows) : "";
 
   plans.forEach((plan) => {
@@ -5472,6 +5557,11 @@ function aggregateCareerRows(dataset, rows) {
   aggregate[dataset.yearColumn] = latest[dataset.yearColumn];
   aggregate[dataset.teamColumn] = dataset.id === "grassroots" ? mergedTeams.join(" / ") : latest[dataset.teamColumn];
   if (dataset.id === "grassroots") {
+    if (mergedPositions.length) {
+      const mergedPositionText = mergedPositions.join(" / ");
+      aggregate.pos = mergedPositionText;
+      aggregate.pos_text = mergedPositionText;
+    }
     if (mergedEvents.length) aggregate.event_name = mergedEvents.join(" / ");
     if (mergedCircuits.length) aggregate.circuit = mergedCircuits.join(" / ");
     if (mergedSettings.length) aggregate.setting = mergedSettings.join(" / ");
@@ -6522,8 +6612,12 @@ function enhanceCollegeRow(row, datasetId) {
       row.two_pm = twoPm;
     }
     const rawFtm = firstFinite(row.ftm, Number.NaN);
-    const derivedFtm = Number.isFinite(row.pts) ? Math.max(0, row.pts - (2 * twoPm) - (3 * threePm)) : Number.NaN;
-    row.ftm = Number.isFinite(derivedFtm) ? derivedFtm : (Number.isFinite(rawFtm) ? Math.max(0, rawFtm) : 0);
+    const derivedFtm = Number.isFinite(row.pts) ? (row.pts - (2 * twoPm) - (3 * threePm)) : Number.NaN;
+    row.ftm = Number.isFinite(derivedFtm)
+      ? Math.max(0, derivedFtm)
+      : (Number.isFinite(rawFtm) ? Math.max(0, rawFtm) : 0);
+    const inferredClassYear = inferGrassrootsClassYear(row.class_year, row.season, row.age_range || row.level || row.event_name || row.team_name);
+    if (Number.isFinite(inferredClassYear)) row.class_year = inferredClassYear;
   }
   scaleRateColumns(row, ["fg_pct", "2p_pct", "tp_pct", "ft_pct", "efg_pct", "ts_pct", "orb_pct", "drb_pct", "trb_pct", "ast_pct", "stl_pct", "blk_pct", "tov_pct", "usg_pct"], datasetId);
   populateDerivedShooting(row, {
@@ -6557,11 +6651,9 @@ function enhanceCollegeRow(row, datasetId) {
   if (datasetId === "grassroots") {
     row.ftm_pg = perGameValue(row.ftm, row.gp);
     const ftmFga = ratioIfPossible(row.ftm, row.fga);
-    row.ftm_fga = Number.isFinite(ftmFga) ? Math.max(0, ftmFga) : "";
-    const threePr = Number.isFinite(row.three_pr) ? Math.max(0, row.three_pr) : Number.NaN;
-    if (Number.isFinite(threePr)) row.three_pr = threePr;
-    if (Number.isFinite(threePr) && Number.isFinite(row.ftm_fga)) {
-      row.three_pr_plus_ftm_fga = roundNumber(threePr + row.ftm_fga, 3);
+    row.ftm_fga = Number.isFinite(ftmFga) ? ftmFga : "";
+    if (Number.isFinite(row.three_pr) && Number.isFinite(row.ftm_fga)) {
+      row.three_pr_plus_ftm_fga = roundNumber(row.three_pr + row.ftm_fga, 3);
     }
   }
   row.three_pa_per100 = possPer100Value(row.tpa ?? row["3pa"] ?? row.three_pa, row);
