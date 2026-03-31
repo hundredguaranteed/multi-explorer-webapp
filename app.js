@@ -794,7 +794,7 @@ function buildNbaCompanionConfig() {
     yearColumn: "season",
     playerColumn: "player_name",
     teamColumn: "team_name",
-    lockedColumns: ["rank", "season", "player_name", "team_name"],
+    lockedColumns: ["rank", "season", "player_name"],
     searchColumns: ["player_name", "player_search_text", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
     sortBy: "nba_epm",
     sortDir: "desc",
@@ -1197,7 +1197,7 @@ const DATASETS = {
     demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
     demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
     groups: [
-       { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "circuit", "pos"], defaultColumns: ["pos"] },
+      { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "circuit", "team_name", "pos"], defaultColumns: ["pos"] },
       { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm"] },
       { id: "ratios", label: "Ratios", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"] },
       { id: "per_game", label: "Per Game", columns: ["pts_pg", "trb_pg", "ast_pg", "ast_stl_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg", "tpm_pg", "tpa_pg", "ftm_pg"], defaultColumns: ["pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg"] },
@@ -6979,18 +6979,18 @@ function getColumnWidth(column, dataset) {
   if (column === "rank") return 18;
   if (baseColumn === dataset.yearColumn || baseColumn === "season") return 48;
   if (baseColumn === "age_range") return 52;
-  if (baseColumn === "event_name") return 208;
+  if (dataset.id === "grassroots" && baseColumn === "event_name") return 96;
   if (baseColumn === "event_group") return 220;
   if (baseColumn === "event_raw_name") return 260;
   if (baseColumn === "setting") return 72;
   if (baseColumn === "state") return 44;
-  if (baseColumn === "circuit") return 154;
+  if (dataset.id === "grassroots" && baseColumn === "circuit") return 92;
   if (baseColumn === "ftm_fga") return 54;
   if (baseColumn === "ast_stl_pg" || baseColumn === "ast_stl_per40") return 58;
   if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
   if (baseColumn === "three_pr_plus_ftm_fga") return 92;
   if (/player/i.test(baseColumn)) return 148;
-  if (baseColumn === dataset.teamColumn || /team/i.test(baseColumn)) return 108;
+  if (dataset.id === "grassroots" && (baseColumn === dataset.teamColumn || /team/i.test(baseColumn))) return 84;
   if (baseColumn === "competition_label") return 94;
   if (/^nationality$|^team_code$/.test(baseColumn)) return 52;
   if (baseColumn === "coach") return 96;
@@ -7071,14 +7071,15 @@ function getGamesValue(row) {
 }
 
 function renderHeaderCell(dataset, state, column) {
-  const classes = ["is-sortable"];
+  const sortable = column !== "rank";
+  const classes = sortable ? ["is-sortable"] : [];
   const label = displayLabel(dataset, column);
   if (isWrapColumn(dataset, column)) classes.push("cell-wrap");
   if (dataset.id === "grassroots" && ["team_name", "team_full", "event_name", "event_group", "event_raw_name", "circuit"].includes(column)) {
     classes.push("cell-small-text");
   }
   if (isD1PlaytypeColumn(column) || /^ncaa_|^nba_/i.test(column) || label.length >= 11) classes.push("cell-header-small");
-  return `<th class="${classes.join(" ")}" data-sort="${escapeAttribute(column)}">${escapeHtml(label)}</th>`;
+  return `<th class="${classes.join(" ")}"${sortable ? ` data-sort="${escapeAttribute(column)}"` : ""}>${escapeHtml(label)}</th>`;
 }
 
 function updateLoadMoreButton(totalRows, renderedRows) {
@@ -7086,7 +7087,7 @@ function updateLoadMoreButton(totalRows, renderedRows) {
 }
 
 function renderBodyCell(dataset, state, column, row, index, colorScale) {
-  const rawValue = column === "rank" && (row.rank == null || state?.extraSelects?.view_mode === "career")
+  const rawValue = column === "rank"
     ? index + 1
     : getRowColumnValue(dataset, row, column);
   const display = formatValue(dataset, column, rawValue, row);
@@ -7872,8 +7873,17 @@ function enhanceCollegeRow(row, datasetId) {
   row.ftr = ratioIfPossible(row.fta, row.fga);
   row.three_pr = ratioIfPossible(row.tpa ?? row["3pa"] ?? row.three_pa, row.fga);
   if (datasetId === "grassroots") {
-    row.ftm_pg = perGameValue(row.ftm, row.gp);
-    row.pf_pg = perGameValue(row.pf, row.gp);
+    row.pts_pg = Number.isFinite(row.pts) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.pts / row.gp, 1) : row.pts_pg;
+    row.trb_pg = Number.isFinite(row.trb) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.trb / row.gp, 1) : row.trb_pg;
+    row.ast_pg = Number.isFinite(row.ast) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.ast / row.gp, 1) : row.ast_pg;
+    row.tov_pg = Number.isFinite(row.tov) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.tov / row.gp, 1) : row.tov_pg;
+    row.stl_pg = Number.isFinite(row.stl) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.stl / row.gp, 1) : row.stl_pg;
+    row.blk_pg = Number.isFinite(row.blk) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.blk / row.gp, 1) : row.blk_pg;
+    row.stocks_pg = Number.isFinite(row.stocks) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.stocks / row.gp, 1) : row.stocks_pg;
+    row.two_pa_pg = Number.isFinite(row.two_pa) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.two_pa / row.gp, 1) : row.two_pa_pg;
+    row.three_pa_pg = Number.isFinite(row.three_pa) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.three_pa / row.gp, 1) : row.three_pa_pg;
+    row.ftm_pg = Number.isFinite(row.ftm) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.ftm / row.gp, 1) : row.ftm_pg;
+    row.pf_pg = Number.isFinite(row.pf) && Number.isFinite(row.gp) && row.gp > 0 ? roundNumber(row.pf / row.gp, 1) : row.pf_pg;
     const ftmFga = ratioIfPossible(row.ftm, row.fga);
     row.ftm_fga = Number.isFinite(ftmFga) ? ftmFga : "";
     row.ast_to = Number.isFinite(row.tov) && row.tov > 0 ? roundNumber(row.ast / row.tov, 2) : row.ast_to;
