@@ -1196,7 +1196,7 @@ const DATASETS = {
     demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
     demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
     groups: [
-       { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "pos"], defaultColumns: ["setting", "state", "age_range", "class_year", "event_name", "pos"] },
+       { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "pos"], defaultColumns: ["pos"] },
        { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm"] },
       { id: "ratios", label: "Ratios", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"] },
       { id: "per_game", label: "Per Game", columns: ["pts_pg", "trb_pg", "ast_pg", "tov_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg", "tpm_pg", "tpa_pg", "ftm_pg"], defaultColumns: ["pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg"] },
@@ -1214,7 +1214,7 @@ const DATASETS = {
       { id: "circuit", label: "Circuit", column: "circuit", sort: GRASSROOTS_CIRCUIT_ORDER },
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
     ],
-    defaultVisible: ["rank", "season", "age_range", "setting", "state", "circuit", "event_name", "player_name", "team_name", "pos", "class_year", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
+    defaultVisible: ["rank", "season", "circuit", "player_name", "team_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "tpa_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
     labels: {
       rank: "",
       season: "Year",
