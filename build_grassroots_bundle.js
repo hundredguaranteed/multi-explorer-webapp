@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
-const sources = [
+const LEGACY_SOURCES = [
   {
     circuit: "EYBL",
     file: path.join(rootDir, "nike_all_event_player_stats_clean.csv"),
@@ -31,6 +31,7 @@ const sources = [
   { circuit: "General HS", file: path.join(rootDir, "showcases_all_event_player_stats_clean.csv"), include: () => true },
   { circuit: "General HS", file: path.join(rootDir, "general_hs_all_event_player_stats_clean.csv"), include: () => true },
 ];
+const YEARLY_MANIFEST_FILE = path.join(__dirname, "yearly_event_exports", "cerebro_yearly_manifest.csv");
 
 const outputFile = path.join(__dirname, "data", "vendor", "grassroots_all_seasons.js");
 const circuitOrder = new Map([
@@ -220,8 +221,59 @@ function circuitSortValue(circuitText) {
     .reduce((min, value) => Math.min(min, value), 99);
 }
 
+function classifyGrassrootsCircuit(eventName) {
+  const text = String(eventName ?? "");
+  if (/\bNike\b/i.test(text)) {
+    if (/\bEYBL\b/i.test(text) && !/eycl|scholastic/i.test(text)) return "EYBL";
+    return "Nike Other";
+  }
+  if (/3SSB|adidas/i.test(text)) return "3SSB";
+  if (/\bUAA\b|under armour/i.test(text)) return "UAA";
+  if (/puma/i.test(text)) return "Puma";
+  if (/overtime elite|\bote\b/i.test(text)) return "OTE";
+  if (/grind session/i.test(text)) return "Grind Session";
+  if (/nbpa.*100|top 100 camp/i.test(text)) return "NBPA 100";
+  if (/hoophall|hoop hall/i.test(text)) return "Hoophall";
+  if (/montverde/i.test(text)) return "Montverde";
+  if (/elite prep league|\bepl\b/i.test(text)) return "EPL";
+  return "";
+}
+
 function inferCircuit(sourceCircuit, row) {
-  return sourceCircuit;
+  return classifyGrassrootsCircuit(row.event_name) || sourceCircuit || "General HS";
+}
+
+function loadManifestSourceFiles() {
+  if (!fs.existsSync(YEARLY_MANIFEST_FILE)) return [];
+  const manifestRows = parseCSV(fs.readFileSync(YEARLY_MANIFEST_FILE, "utf8"));
+  const files = [];
+  const seen = new Set();
+  manifestRows.forEach((row) => {
+    const file = String(row.output_path ?? "").trim();
+    if (!file) return;
+    const normalized = path.normalize(file);
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    if (fs.existsSync(normalized)) files.push(normalized);
+  });
+  return files;
+}
+
+function loadGrassrootsRowsFromFile(file, circuitResolver, seenEventUrls, filterFn = () => true) {
+  if (!fs.existsSync(file)) return 0;
+  const parsed = parseCSV(fs.readFileSync(file, "utf8"));
+  let added = 0;
+  parsed.forEach((row) => {
+    if (!filterFn(row)) return;
+    const eventUrl = String(row.event_url ?? "").trim();
+    if (!eventUrl || seenEventUrls.has(eventUrl)) return;
+    const circuit = circuitResolver(row);
+    if (!circuit) return;
+    seenEventUrls.add(eventUrl);
+    rows.push(mapRow(row, circuit));
+    added += 1;
+  });
+  return added;
 }
 
 function aggregateRows(rows) {
@@ -254,6 +306,10 @@ function aggregateGroup(group) {
 
   sumColumns.forEach((column) => {
     const total = group.reduce((sum, row) => sum + (Number.isFinite(row[column]) ? row[column] : 0), 0);
+    if (column === "tpm" || column === "tpa") {
+      output[column] = round(total, 1);
+      return;
+    }
     output[column] = total > 0 ? round(total, 1) : "";
   });
 
@@ -303,8 +359,8 @@ function aggregateGroup(group) {
   output.three_pr = Number.isFinite(output.tpa) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.tpa / output.fga, 3) : "";
   output.tpm_pg = Number.isFinite(output.tpm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpm / output.gp, 1) : "";
   output.tpa_pg = Number.isFinite(output.tpa) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.tpa / output.gp, 1) : "";
-  output.ftm = Number.isFinite(output.pts) && Number.isFinite(output["2pm"]) && Number.isFinite(output.tpm)
-    ? round(output.pts - (output["2pm"] * 2) - (output.tpm * 3), 1)
+  output.ftm = Number.isFinite(output.pts) && Number.isFinite(output["2pm"])
+    ? Math.max(0, round(output.pts - (output["2pm"] * 2) - ((Number.isFinite(output.tpm) ? output.tpm : 0) * 3), 1))
     : "";
   output.ftm_pg = Number.isFinite(output.ftm) && Number.isFinite(output.gp) && output.gp > 0 ? round(output.ftm / output.gp, 1) : "";
   output.ftm_fga = Number.isFinite(output.ftm) && Number.isFinite(output.fga) && output.fga > 0 ? round(output.ftm / output.fga, 2) : "";
@@ -326,8 +382,8 @@ function mapRow(row, circuit) {
   const tpPct = toPercentNumber(row["3PT%"]);
   const fgm = toNumber(row.FGS);
   const fga = Number.isFinite(fgm) && Number.isFinite(fgPct) && fgPct > 0 ? round(fgm / (fgPct / 100), 1) : "";
-  const tpm = Number.isFinite(tpmPg) && Number.isFinite(gp) ? round(tpmPg * gp, 1) : "";
-  const tpa = Number.isFinite(tpm) && Number.isFinite(tpPct) && tpPct > 0 ? round(tpm / (tpPct / 100), 1) : "";
+  const tpm = Number.isFinite(tpmPg) && Number.isFinite(gp) ? round(tpmPg * gp, 1) : 0;
+  const tpa = Number.isFinite(tpm) && Number.isFinite(tpPct) && tpPct > 0 ? round(tpm / (tpPct / 100), 1) : 0;
   const twoPm = Number.isFinite(fgm) && Number.isFinite(tpm) ? round(fgm - tpm, 1) : "";
   const twoPa = Number.isFinite(fga) && Number.isFinite(tpa) ? round(fga - tpa, 1) : "";
   const twoPct = Number.isFinite(twoPm) && Number.isFinite(twoPa) && twoPa > 0 ? round((twoPm / twoPa) * 100, 1) : "";
@@ -409,13 +465,19 @@ function mapRow(row, circuit) {
 }
 
 const rows = [];
-sources.forEach(({ circuit, file, include }) => {
-  const csv = fs.readFileSync(file, "utf8");
-  const parsed = parseCSV(csv);
-  parsed.forEach((row) => {
-    if (!include(row)) return;
-    rows.push(mapRow(row, inferCircuit(circuit, row)));
+const seenEventUrls = new Set();
+const manifestSourceFiles = loadManifestSourceFiles();
+
+if (manifestSourceFiles.length) {
+  manifestSourceFiles.forEach((file) => {
+    loadGrassrootsRowsFromFile(file, (row) => inferCircuit("", row), seenEventUrls);
   });
+} else {
+  console.warn("No yearly manifest found; falling back to legacy grassroots sources.");
+}
+
+LEGACY_SOURCES.forEach(({ circuit, file, include }) => {
+  loadGrassrootsRowsFromFile(file, (row) => circuit || inferCircuit("", row), seenEventUrls, include);
 });
 
 const aggregatedRows = aggregateRows(rows);
