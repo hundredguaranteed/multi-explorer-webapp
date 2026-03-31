@@ -265,16 +265,17 @@ a,
 }
 
 .multi-pill-group .pill-toggle {
-  flex: 0 0 52px;
+  flex: 0 0 56px;
   white-space: normal;
   line-height: 1.02;
-  font-size: 9px;
+  font-size: 8.5px;
 }
 
 .multi-pill-group[data-filter-id="circuit"] .pill-toggle {
-  flex-basis: 92px;
-  min-width: 92px;
-  font-size: 9px;
+  flex-basis: 112px;
+  min-width: 112px;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .embedded-demo-controls {
@@ -451,9 +452,9 @@ a,
 
 #statsTable th.cell-small-text,
 #statsTable td.cell-small-text {
-  font-size: 7px;
+  font-size: 6.5px;
   line-height: 1;
-  letter-spacing: -0.1px;
+  letter-spacing: -0.15px;
 }
 
 #statsTable th {
