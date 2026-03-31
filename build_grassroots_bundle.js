@@ -39,6 +39,7 @@ const RAW_ROW_KEY_COLUMNS = [
 
 const yearManifestFile = path.join(__dirname, "data", "vendor", "grassroots_year_manifest.js");
 const yearChunkDir = path.join(__dirname, "data", "vendor", "grassroots_year_chunks");
+const scopeBundleDir = path.join(__dirname, "data", "vendor", "grassroots_scope_bundles");
 const circuitOrder = new Map([
   ["EYBL", 0],
   ["Nike Scholastic", 1],
@@ -146,6 +147,25 @@ const GRASSROOTS_PHASE_SUFFIX_PATTERNS = [
 ];
 
 const GRASSROOTS_NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+const GRASSROOTS_ADJ_BPM_LG_2P = 0.51;
+const GRASSROOTS_ADJ_BPM_LG_FT = 0.77;
+const GRASSROOTS_ADJ_BPM_BAD_3P = 0.32;
+const GRASSROOTS_ADJ_BPM_POSITION_IN = {
+  PG: 74,
+  SG: 76,
+  SF: 78,
+  PF: 80,
+  C: 83,
+};
+const GRASSROOTS_ADJ_BPM_ROLE_ADJ = {
+  PG: -0.5,
+  "PG/SG": -0.375,
+  SG: -0.25,
+  SF: 0,
+  "SF/PF": 0.15,
+  PF: 0.3,
+  C: 0.6,
+};
 
 function parseCSV(text) {
   const rows = [];
@@ -253,6 +273,173 @@ function roundGrassrootsPercent(value, digits = 1) {
   return Math.round(value * factor) / factor;
 }
 
+function firstFinite(...values) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return Number.NaN;
+}
+
+function getMinutesValue(row) {
+  if (typeof row?.min === "number" && Number.isFinite(row.min)) return row.min;
+  if (typeof row?.mpg === "number" && typeof row?.gp === "number" && Number.isFinite(row.mpg) && Number.isFinite(row.gp)) {
+    return row.mpg * row.gp;
+  }
+  return 0;
+}
+
+function compareFilterValues(left, right) {
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function compareYears(left, right) {
+  const leftYear = Number(String(left ?? "").match(/\d{4}/)?.[0] || 0);
+  const rightYear = Number(String(right ?? "").match(/\d{4}/)?.[0] || 0);
+  if (leftYear !== rightYear) return rightYear - leftYear;
+  return compareFilterValues(right, left);
+}
+
+function normalizeGrassrootsPercentRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Number.NaN;
+  return numeric > 1.5 ? (numeric / 100) : numeric;
+}
+
+function normalizeClassValue(value) {
+  const text = getStringValue(value).trim();
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  if (lower.startsWith("fr")) return "Fr";
+  if (lower.startsWith("so")) return "So";
+  if (lower.startsWith("jr")) return "Jr";
+  if (lower.startsWith("sr")) return "Sr";
+  if (lower.startsWith("gr")) return "Gr";
+  return text;
+}
+
+function getGrassrootsAdjBpmPositionInfo(heightIn, positionText) {
+  const position = normalizePosLabel(positionText);
+  const canonicalIn = GRASSROOTS_ADJ_BPM_POSITION_IN[position];
+  const roleAdj = GRASSROOTS_ADJ_BPM_ROLE_ADJ[position];
+  const hasHeight = Number.isFinite(heightIn);
+  const hasPosition = Boolean(position);
+
+  if (hasHeight && hasPosition && Number.isFinite(canonicalIn) && Number.isFinite(roleAdj)) {
+    return {
+      effectiveIn: (heightIn * 0.65) + (canonicalIn * 0.35),
+      roleAdj,
+    };
+  }
+
+  if (hasHeight && !hasPosition) {
+    if (heightIn <= 72) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ.PG };
+    if (heightIn <= 74) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ["PG/SG"] };
+    if (heightIn <= 76) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ.SG };
+    if (heightIn <= 78) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ.SF };
+    if (heightIn <= 80) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ["SF/PF"] };
+    if (heightIn <= 82) return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ.PF };
+    return { effectiveIn: heightIn, roleAdj: GRASSROOTS_ADJ_BPM_ROLE_ADJ.C };
+  }
+
+  if (hasPosition) {
+    return {
+      effectiveIn: Number.isFinite(canonicalIn) ? canonicalIn : 78,
+      roleAdj: Number.isFinite(roleAdj) ? roleAdj : 0,
+    };
+  }
+
+  return { effectiveIn: 78, roleAdj: 0 };
+}
+
+function getGrassrootsAdjBpmReboundSplit(positionText) {
+  const position = normalizePosLabel(positionText);
+  if (["PG", "SG", "G"].includes(position)) return 0.25;
+  if (position === "G/F") return 0.30;
+  if (position === "SF") return 0.31;
+  if (position === "F") return 0.32;
+  if (position === "PF") return 0.35;
+  if (position === "C") return 0.40;
+  return 0.30;
+}
+
+function calculateGrassrootsAdjBpm(row) {
+  const minutes = getMinutesValue(row);
+  const scale = Number.isFinite(minutes) && minutes > 0 ? (40 / minutes) : Number.NaN;
+  const pts = firstFinite(row.pts_per40, Number.isFinite(row.pts) && Number.isFinite(scale) ? row.pts * scale : Number.NaN, Number.NaN);
+  const twoPa = firstFinite(row.two_pa_per40, Number.isFinite(row["2pa"]) && Number.isFinite(scale) ? row["2pa"] * scale : Number.NaN, Number.NaN);
+  const threePa = firstFinite(row.three_pa_per40, Number.isFinite(row.tpa) && Number.isFinite(scale) ? row.tpa * scale : Number.NaN, Number.NaN);
+  const ast = firstFinite(row.ast_per40, Number.isFinite(row.ast) && Number.isFinite(scale) ? row.ast * scale : Number.NaN, Number.NaN);
+  const tov = firstFinite(row.tov_per40, Number.isFinite(row.tov) && Number.isFinite(scale) ? row.tov * scale : Number.NaN, Number.NaN);
+  const stl = firstFinite(row.stl_per40, Number.isFinite(row.stl) && Number.isFinite(scale) ? row.stl * scale : Number.NaN, Number.NaN);
+  const blk = firstFinite(row.blk_per40, Number.isFinite(row.blk) && Number.isFinite(scale) ? row.blk * scale : Number.NaN, Number.NaN);
+  const pf = firstFinite(row.pf_per40, Number.isFinite(row.pf) && Number.isFinite(scale) ? row.pf * scale : Number.NaN, Number.NaN);
+  const trb = firstFinite(row.trb_per40, Number.isFinite(row.trb) && Number.isFinite(scale) ? row.trb * scale : Number.NaN, Number.NaN);
+  const positionInfo = getGrassrootsAdjBpmPositionInfo(firstFinite(row.height_in, row.inches, Number.NaN), row.pos || row.pos_text);
+  const reboundShare = getGrassrootsAdjBpmReboundSplit(row.pos || row.pos_text);
+  const orb = Number.isFinite(trb) ? trb * reboundShare : 0;
+  const drb = Number.isFinite(trb) ? Math.max(0, trb - orb) : 0;
+  const fga = Number.isFinite(twoPa) && Number.isFinite(threePa) ? (twoPa + threePa) : Number.NaN;
+  const twoPpct = normalizeGrassrootsPercentRate(firstFinite(row["2p_pct"], Number.NaN));
+  const threePpct = normalizeGrassrootsPercentRate(firstFinite(row.tp_pct, row["3p_pct"], Number.NaN));
+  const ftPct = normalizeGrassrootsPercentRate(firstFinite(row.ft_pct, Number.NaN));
+  const ftmPer40 = Number.isFinite(row.ftm) && Number.isFinite(scale) ? row.ftm * scale : Number.NaN;
+  const ftAttempts = Number.isFinite(ftPct) && Number.isFinite(ftmPer40) && ftPct > 0 ? (ftmPer40 / ftPct) : Number.NaN;
+  const eff2p = Number.isFinite(twoPpct) && Number.isFinite(twoPa)
+    ? ((twoPpct - GRASSROOTS_ADJ_BPM_LG_2P) * twoPa * 1.9)
+    : 0;
+  const effFt = Number.isFinite(ftPct) && Number.isFinite(ftAttempts)
+    ? ((ftPct - GRASSROOTS_ADJ_BPM_LG_FT) * ftAttempts * 0.75)
+    : 0;
+  const eff3p = Number.isFinite(threePpct) && Number.isFinite(threePa)
+    ? (-Math.max(0, GRASSROOTS_ADJ_BPM_BAD_3P - threePpct) * threePa * 1.3)
+    : 0;
+
+  if (![pts, ast, tov, fga].every((value) => Number.isFinite(value))) return "";
+
+  const obpm = -5.5
+    + (pts * 0.22)
+    + (ast * 0.68)
+    - (tov * 0.42)
+    - (fga * 0.10)
+    + eff2p
+    + effFt
+    + eff3p;
+
+  const dbpm = -0.8
+    + ((positionInfo.effectiveIn - 76) * 0.33)
+    + positionInfo.roleAdj
+    + (Number.isFinite(stl) ? (stl * 0.36) : 0)
+    + (Number.isFinite(blk) ? (blk * 0.30) : 0)
+    + (Number.isFinite(drb) ? (drb * 0.10) : 0)
+    + (Number.isFinite(orb) ? (orb * 0.08) : 0)
+    - (Number.isFinite(pf) ? (pf * 0.10) : 0);
+
+  return round((obpm + dbpm), 1);
+}
+
+function sortGrassrootsDisplayValues(values, preferredOrder = []) {
+  const orderIndex = new Map(preferredOrder.map((value, index) => [normalizeKey(value), index]));
+  return Array.from(new Set(Array.from(values).map((value) => String(value ?? "").trim()).filter(Boolean))).sort((left, right) => {
+    const leftIndex = orderIndex.has(normalizeKey(left)) ? orderIndex.get(normalizeKey(left)) : Number.POSITIVE_INFINITY;
+    const rightIndex = orderIndex.has(normalizeKey(right)) ? orderIndex.get(normalizeKey(right)) : Number.POSITIVE_INFINITY;
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return compareFilterValues(left, right);
+  });
+}
+
+function sortGrassrootsEventValues(values) {
+  return Array.from(new Set(Array.from(values).map((value) => String(value ?? "").trim()).filter(Boolean))).sort((left, right) => {
+    const leftAllClasses = /\ball classes\b/i.test(left);
+    const rightAllClasses = /\ball classes\b/i.test(right);
+    const leftSeason = Number(String(left).match(/\d{4}/)?.[0] || 0);
+    const rightSeason = Number(String(right).match(/\d{4}/)?.[0] || 0);
+    if (leftSeason !== rightSeason) return rightSeason - leftSeason;
+    if (leftAllClasses !== rightAllClasses) return leftAllClasses ? -1 : 1;
+    return compareFilterValues(left, right);
+  });
+}
+
 function deriveGrassrootsShotTotals({ gp, ptsPg, fgPct, tpPct, tpmPg, forceNoThree = false }) {
   const games = Number.isFinite(gp) && gp > 0 ? Math.max(1, Math.round(gp)) : 0;
   const points = Number.isFinite(ptsPg) && games > 0 ? Math.max(0, Math.round(ptsPg * games)) : 0;
@@ -344,9 +531,7 @@ function buildGrassrootsCareerKey(row) {
   const playerName = normalizeGrassrootsNameKey(row.player_name || row.player);
   const lastName = getGrassrootsNameLastToken(playerName);
   const heightKey = Number.isFinite(row.height_in) ? Math.round(row.height_in / 2) * 2 : "";
-  const weightKey = Number.isFinite(row.weight_lb) ? Math.round(row.weight_lb / 10) * 10 : "";
-  const classKey = String(row.class_year || "").trim();
-  return [normalizeKey(lastName || playerName), heightKey, weightKey, classKey].join("|");
+  return [normalizeKey(lastName || playerName), heightKey].join("|");
 }
 
 function ratio(numerator, denominator) {
@@ -829,6 +1014,77 @@ function mergeGrassrootsRows(rawRows) {
   return merged;
 }
 
+function buildGrassrootsExactDuplicateKey(row) {
+  return [
+    row.season,
+    normalizeKey(row.event_merge_key || row.event_name || row.event_group || row.event_raw_name || ""),
+    normalizeGrassrootsTeamKey(row.team_full || row.team_name || ""),
+    normalizeKey(row.circuit || ""),
+    normalizeKey(row.setting || ""),
+    normalizeKey(row.pos || row.pos_text || ""),
+    String(row.class_year ?? ""),
+    String(row.height_in ?? ""),
+    String(row.weight_lb ?? ""),
+    String(row.gp ?? ""),
+    String(row.min ?? ""),
+    String(row.pts ?? ""),
+    String(row.fgm ?? ""),
+    String(row.fga ?? ""),
+    String(row["2pm"] ?? ""),
+    String(row["2pa"] ?? ""),
+    String(row.tpm ?? ""),
+    String(row.tpa ?? ""),
+    String(row.ftm ?? ""),
+    String(row.trb ?? ""),
+    String(row.ast ?? ""),
+    String(row.tov ?? ""),
+    String(row.stl ?? ""),
+    String(row.blk ?? ""),
+    String(row.pf ?? ""),
+    String(row.stocks ?? ""),
+  ].join("|");
+}
+
+function grassrootsDuplicateRowScore(row) {
+  const fields = Object.entries(row || {}).reduce((sum, [column, value]) => {
+    if (column.startsWith("_")) return sum;
+    if (value == null || value === "") return sum;
+    if (typeof value === "number" && !Number.isFinite(value)) return sum;
+    return sum + 1;
+  }, 0);
+  const playerScore = String(row.player_name || row.player || "").length;
+  const teamScore = String(row.team_full || row.team_name || "").length;
+  const eventScore = String(row.event_name || row.event_group || "").length;
+  return (fields * 10) + playerScore + teamScore + eventScore;
+}
+
+function pickPreferredGrassrootsDuplicateRow(rows) {
+  return rows
+    .slice()
+    .sort((left, right) => grassrootsDuplicateRowScore(right) - grassrootsDuplicateRowScore(left))[0] || rows[0] || {};
+}
+
+function dedupeGrassrootsExactDuplicateRows(rows) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const key = buildGrassrootsExactDuplicateKey(row);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(row);
+  });
+
+  let removed = 0;
+  const deduped = Array.from(grouped.values()).map((groupRows) => {
+    if (groupRows.length <= 1) return groupRows[0];
+    removed += groupRows.length - 1;
+    return pickPreferredGrassrootsDuplicateRow(groupRows);
+  });
+
+  if (removed > 0) {
+    console.log(`Removed ${removed} exact duplicate grassroots rows.`);
+  }
+  return deduped;
+}
+
 function classifyGrassrootsCircuit(eventName) {
   const text = String(eventName ?? "");
   if (/\bEYCL\b/i.test(text)) return "Nike EYCL";
@@ -855,6 +1111,247 @@ function inferCircuit(sourceCircuit, row) {
   const circuit = classifyGrassrootsCircuit(row.event_name) || sourceCircuit || "General HS";
   if (circuit === "General HS" && /17u/i.test(String(row.Team || ""))) return "Other Amateur";
   return circuit;
+}
+
+function getGrassrootsScopeSpec(scope) {
+  if (scope === "career_hs") {
+    return {
+      scope,
+      setting: "HS",
+      season: "All Years",
+      filter: (row) => getGrassrootsSettingForCircuit(row.circuit) === "HS",
+      key: (row) => row.career_player_key || buildGrassrootsCareerKey(row),
+    };
+  }
+  if (scope === "career_aau") {
+    return {
+      scope,
+      setting: "AAU",
+      season: "All Years",
+      filter: (row) => getGrassrootsSettingForCircuit(row.circuit) === "AAU",
+      key: (row) => row.career_player_key || buildGrassrootsCareerKey(row),
+    };
+  }
+  if (scope === "single_year") {
+    return {
+      scope,
+      setting: "Single Year",
+      season: null,
+      filter: () => true,
+      key: (row) => [row.season, row.career_player_key || buildGrassrootsCareerKey(row)].join("|"),
+    };
+  }
+  return {
+    scope: "career_overall",
+    setting: "Overall",
+    season: "All Years",
+    filter: () => true,
+    key: (row) => row.career_player_key || buildGrassrootsCareerKey(row),
+  };
+}
+
+function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
+  const rows = Array.isArray(groupRows) ? groupRows : [];
+  if (!rows.length) return aggregate;
+
+  const latest = rows[0] || {};
+  const numericColumns = new Set();
+  rows.forEach((row) => {
+    Object.entries(row).forEach(([column, value]) => {
+      if (typeof value === "number" && Number.isFinite(value)) numericColumns.add(column);
+    });
+  });
+
+  const latestColumns = new Set([
+    "season",
+    "age_range",
+    "level",
+    "circuit",
+    "setting",
+    "event_name",
+    "event_group",
+    "event_raw_name",
+    "event_aliases",
+    "player_search_text",
+    "team_search_text",
+    "player_aliases",
+    "team_aliases",
+    "event_url",
+    "event_total_players",
+    "page_index",
+    "rank",
+    "player_name",
+    "team_name",
+    "team_full",
+    "state",
+    "team_state",
+    "career_player_key",
+    "pos",
+    "pos_text",
+    "class_year",
+    "height_in",
+    "weight_lb",
+    "gp",
+    "min",
+    "mpg",
+    "percentile_weight",
+  ]);
+
+  const sumColumns = new Set([
+    "gp",
+    "min",
+    "pts",
+    "fgm",
+    "fga",
+    "2pm",
+    "2pa",
+    "tpm",
+    "tpa",
+    "ftm",
+    "trb",
+    "ast",
+    "tov",
+    "stl",
+    "blk",
+    "pf",
+    "stocks",
+  ]);
+
+  numericColumns.forEach((column) => {
+    if (sumColumns.has(column) || latestColumns.has(column)) return;
+    if (/(_pg$|_per40$|_pct$|_pr$|_pf$|_to$|_bpm$|_pe$|_weight$|_percentile$|_rate$)/i.test(column)) return;
+    let totalWeight = 0;
+    let weightedSum = 0;
+    let hasValue = false;
+    rows.forEach((row) => {
+      const value = Number(row[column]);
+      if (!Number.isFinite(value)) return;
+      hasValue = true;
+      const weight = Math.max(getMinutesValue(row), 1);
+      totalWeight += weight;
+      weightedSum += value * weight;
+    });
+    if (hasValue && totalWeight > 0) aggregate[column] = round(weightedSum / totalWeight, 3);
+  });
+
+  aggregate.season = scopeSpec.season || latest.season || "";
+  aggregate.setting = scopeSpec.setting;
+  aggregate.rank = null;
+  aggregate.pts_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pts / aggregate.min) * 40, 1) : "";
+  aggregate.trb_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.trb / aggregate.min) * 40, 1) : "";
+  aggregate.ast_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.ast / aggregate.min) * 40, 1) : "";
+  aggregate.tov_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : "";
+  aggregate.stl_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stl / aggregate.min) * 40, 1) : "";
+  aggregate.blk_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.blk / aggregate.min) * 40, 1) : "";
+  aggregate.pf_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : "";
+  aggregate.stocks_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stocks / aggregate.min) * 40, 1) : "";
+  aggregate.gp = roundGrassrootsCount(aggregate.gp);
+  aggregate.min = Number.isFinite(aggregate.min) ? round(aggregate.min, 1) : "";
+  aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : "";
+  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 2) : "";
+  aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : "";
+  aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : "";
+  aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : "";
+  aggregate.trb_pg = aggregate.gp > 0 ? round(aggregate.trb / aggregate.gp, 1) : "";
+  aggregate.ast_pg = aggregate.gp > 0 ? round(aggregate.ast / aggregate.gp, 1) : "";
+  aggregate.tov_pg = aggregate.gp > 0 ? round(aggregate.tov / aggregate.gp, 1) : "";
+  aggregate.stl_pg = aggregate.gp > 0 ? round(aggregate.stl / aggregate.gp, 1) : "";
+  aggregate.blk_pg = aggregate.gp > 0 ? round(aggregate.blk / aggregate.gp, 1) : "";
+  aggregate.pf_pg = aggregate.gp > 0 ? round(aggregate.pf / aggregate.gp, 1) : "";
+  aggregate.stocks_pg = aggregate.gp > 0 ? round(aggregate.stocks / aggregate.gp, 1) : "";
+  aggregate.fg_pct = aggregate.fga > 0 ? round((aggregate.fgm / aggregate.fga) * 100, 1) : "";
+  aggregate["2p_pct"] = aggregate["2pa"] > 0 ? round((aggregate["2pm"] / aggregate["2pa"]) * 100, 1) : "";
+  aggregate.tp_pct = aggregate.tpa > 0 ? round((aggregate.tpm / aggregate.tpa) * 100, 1) : "";
+  aggregate.three_pr = aggregate.fga > 0 ? round((aggregate.tpa / aggregate.fga) * 100, 1) : "";
+  aggregate.ftm_fga = aggregate.fga > 0 ? round((aggregate.ftm / aggregate.fga) * 100, 1) : "";
+  aggregate.three_pr_plus_ftm_fga = Number.isFinite(aggregate.three_pr) && Number.isFinite(aggregate.ftm_fga)
+    ? round(aggregate.three_pr + aggregate.ftm_fga, 1)
+    : "";
+  aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : "";
+  aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : "";
+  aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
+  aggregate.three_pe = aggregate.tpa;
+  aggregate.adj_bpm = calculateGrassrootsAdjBpm(aggregate);
+  aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
+  aggregate.fgs = aggregate.fgm;
+  aggregate._careerAggregate = true;
+  aggregate._searchCacheKey = "";
+  aggregate._searchHaystack = "";
+  aggregate._colorBucketCacheKey = "";
+  aggregate._colorBucketValue = "";
+  return aggregate;
+}
+
+function buildGrassrootsScopeRows(sourceRows, scope) {
+  const scopeSpec = getGrassrootsScopeSpec(scope);
+  const grouped = new Map();
+  sourceRows.forEach((row) => {
+    if (!scopeSpec.filter(row)) return;
+    const key = scopeSpec.key(row);
+    if (!key) return;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(row);
+  });
+
+  const rows = Array.from(grouped.values()).map((groupRows) => {
+    const aggregate = aggregateGrassrootsRowGroup(groupRows);
+    return finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec);
+  });
+
+  const mergedByPlayer = new Map();
+  rows.forEach((row) => {
+    const playerKey = normalizeKey(row.player_name || row.player || "");
+    if (!playerKey) {
+      const fallbackKey = `row|${mergedByPlayer.size}`;
+      mergedByPlayer.set(fallbackKey, [row]);
+      return;
+    }
+    const seasonKey = scope === "single_year" ? normalizeKey(row.season || "") : "";
+    const key = `${seasonKey}|${playerKey}`;
+    if (!mergedByPlayer.has(key)) mergedByPlayer.set(key, []);
+    mergedByPlayer.get(key).push(row);
+  });
+
+  const mergedRows = Array.from(mergedByPlayer.values()).map((groupRows) => {
+    if (groupRows.length <= 1) return groupRows[0];
+    return aggregateGrassrootsRowGroup(groupRows);
+  });
+
+  mergedRows.sort((left, right) => {
+    const leftSeason = Number(String(left.season ?? "").match(/\d{4}/)?.[0] || 0);
+    const rightSeason = Number(String(right.season ?? "").match(/\d{4}/)?.[0] || 0);
+    if (leftSeason !== rightSeason) return rightSeason - leftSeason;
+    const leftAge = ageSortValue(left.age_range);
+    const rightAge = ageSortValue(right.age_range);
+    if (leftAge !== rightAge) return rightAge - leftAge;
+    const circuitDiff = circuitSortValue(left.circuit) - circuitSortValue(right.circuit);
+    if (circuitDiff) return circuitDiff;
+    const rankDiff = Number(left.rank || 0) - Number(right.rank || 0);
+    if (rankDiff) return rankDiff;
+    const teamDiff = String(left.team_name || "").localeCompare(String(right.team_name || ""), undefined, { numeric: true, sensitivity: "base" });
+    if (teamDiff) return teamDiff;
+    return String(left.player_name || "").localeCompare(String(right.player_name || ""), undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  return mergedRows;
+}
+
+function writeGrassrootsScopeBundle(scope, rows) {
+  fs.mkdirSync(scopeBundleDir, { recursive: true });
+  const csvText = [
+    columns.join(","),
+    ...rows.map((row) => columns.map((column) => csvEscape(row[column])).join(",")),
+  ].join("\n");
+  const output = [
+    "// Generated by build_grassroots_bundle.js",
+    `// ${new Date().toISOString()}`,
+    "(function(root) {",
+    "  root.GRASSROOTS_SCOPE_CSV_BUNDLES = root.GRASSROOTS_SCOPE_CSV_BUNDLES || {};",
+    `  root.GRASSROOTS_SCOPE_CSV_BUNDLES[${JSON.stringify(scope)}] = ${JSON.stringify(csvText)};`,
+    "})(typeof self !== \"undefined\" ? self : window);",
+    "",
+  ].join("\n");
+  fs.writeFileSync(path.join(scopeBundleDir, `${scope}.js`), output, "utf8");
 }
 
 function loadManifestSourceFiles() {
@@ -1043,16 +1540,49 @@ function mapRow(row, circuit) {
     pf_pg: pfPg,
     stocks,
     stocks_pg: stocksPg,
+    pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : "",
+    trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
+    ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : "",
+    tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
+    stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : "",
+    blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : "",
     ast_to: tov > 0 ? round(ast / tov, 2) : "",
     blk_pf: pf > 0 ? round(blk / pf, 2) : "",
     stocks_pf: pf > 0 ? round(stocks / pf, 2) : "",
     pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : "",
-    tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
+    stocks_per40: Number.isFinite(min) && min > 0 ? round((stocks / min) * 40, 1) : "",
+    adj_bpm: calculateGrassrootsAdjBpm({
+      pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : "",
+      two_pa_per40: Number.isFinite(min) && min > 0 ? round((twoPa / min) * 40, 1) : "",
+      three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : "",
+      ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : "",
+      tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
+      stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : "",
+      blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : "",
+      pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : "",
+      trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
+      height_in: heightIn,
+      pos: row.POS || "",
+      pos_text: row.POS || "",
+      two_p_pct: twoPct,
+      tp_pct: tpPct,
+      ft_pct: toNumber(row["FT%"]),
+      ftm,
+      gp: gpCount,
+      min,
+      pts,
+      tpa,
+      two_pa: twoPa,
+      stl,
+      blk,
+      trb,
+      pf,
+    }),
     percentile_weight: percentileWeight,
   };
 }
 
-  const rawRows = [];
+const rawRows = [];
 const seenRowKeys = new Set();
 const manifestSourceFiles = loadManifestSourceFiles();
 
@@ -1064,7 +1594,8 @@ if (manifestSourceFiles.length) {
   console.warn("No yearly manifest found; grassroots build will be empty.");
 }
 
-const rows = mergeGrassrootsRows(rawRows);
+const dedupedRawRows = dedupeGrassrootsExactDuplicateRows(rawRows);
+const rows = mergeGrassrootsRows(dedupedRawRows);
 
 rows.sort((left, right) => {
   const yearDiff = Number(right.season || 0) - Number(left.season || 0);
@@ -1156,6 +1687,15 @@ const columns = [
   "stocks_pf",
   "stocks",
   "stocks_pg",
+  "pts_per40",
+  "trb_per40",
+  "ast_per40",
+  "tov_per40",
+  "stl_per40",
+  "blk_per40",
+  "pf_per40",
+  "stocks_per40",
+  "adj_bpm",
   "percentile_weight",
 ];
 
@@ -1177,6 +1717,19 @@ const yearManifest = {
   initialYears: latestSeason ? [latestSeason] : [],
   rowCounts: Object.fromEntries(seasons.map((season) => [season, rowsBySeason.get(season).length])),
 };
+
+const scopeDefinitions = [
+  "career_overall",
+  "career_hs",
+  "career_aau",
+  "single_year",
+];
+
+scopeDefinitions.forEach((scope) => {
+  const scopeRows = buildGrassrootsScopeRows(rows, scope);
+  writeGrassrootsScopeBundle(scope, scopeRows);
+  console.log(`Wrote grassroots scope bundle ${scope} (${scopeRows.length} rows)`);
+});
 
 fs.writeFileSync(
   yearManifestFile,

@@ -272,10 +272,10 @@ a,
 }
 
 .multi-pill-group[data-filter-id="circuit"] .pill-toggle {
-  flex-basis: 112px;
-  min-width: 112px;
-  font-size: 8px;
-  line-height: 1;
+  flex-basis: 132px;
+  min-width: 132px;
+  font-size: 7.5px;
+  line-height: 1.05;
 }
 
 .embedded-demo-controls {
@@ -452,7 +452,7 @@ a,
 
 #statsTable th.cell-small-text,
 #statsTable td.cell-small-text {
-  font-size: 6.5px;
+  font-size: 6.25px;
   line-height: 1;
   letter-spacing: -0.15px;
 }
@@ -742,6 +742,11 @@ a,
 
   .multi-pill-group .pill-toggle {
     flex: 1 1 calc(33.333% - 5px);
+  }
+
+  .multi-pill-group[data-filter-id="circuit"] .pill-toggle {
+    flex: 1 1 calc(50% - 5px);
+    min-width: 0;
   }
 
   .demo-range-item,
