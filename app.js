@@ -552,7 +552,7 @@ function buildD1Config() {
     yearColumn: "season",
     playerColumn: "player_name",
     teamColumn: "team_name",
-    lockedColumns: ["rank", "season", "player_name", "team_name"],
+    lockedColumns: ["rank", "season", "player_name"],
     searchColumns: ["player_name", "player_search_text", "team_name", "conference", "coach", "team_search_text", "coach_search_text"],
     sortBy: "min",
     sortDir: "desc",
@@ -6136,9 +6136,7 @@ function getGrassrootsCareerAliasKey(rowsOrRow) {
 
 function buildGrassrootsCareerKey(row) {
   const playerName = normalizeGrassrootsNameKey(row.player_name || row.player);
-  const lastName = getGrassrootsNameLastToken(playerName);
-  const heightKey = Number.isFinite(row.height_in) ? Math.round(row.height_in / 2) * 2 : "";
-  return [normalizeKey(lastName || playerName), heightKey].join("|");
+  return normalizeKey(playerName);
 }
 
 function getGrassrootsSettingForCircuit(circuit) {
@@ -6986,13 +6984,13 @@ function getColumnWidth(column, dataset) {
   if (baseColumn === "event_raw_name") return 260;
   if (baseColumn === "setting") return 72;
   if (baseColumn === "state") return 44;
-  if (baseColumn === "circuit") return 190;
+  if (baseColumn === "circuit") return 154;
   if (baseColumn === "ftm_fga") return 54;
   if (baseColumn === "ast_stl_pg" || baseColumn === "ast_stl_per40") return 58;
   if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
   if (baseColumn === "three_pr_plus_ftm_fga") return 92;
   if (/player/i.test(baseColumn)) return 148;
-  if (baseColumn === dataset.teamColumn || /team/i.test(baseColumn)) return 128;
+  if (baseColumn === dataset.teamColumn || /team/i.test(baseColumn)) return 108;
   if (baseColumn === "competition_label") return 94;
   if (/^nationality$|^team_code$/.test(baseColumn)) return 52;
   if (baseColumn === "coach") return 96;
@@ -7878,9 +7876,6 @@ function enhanceCollegeRow(row, datasetId) {
     row.pf_pg = perGameValue(row.pf, row.gp);
     const ftmFga = ratioIfPossible(row.ftm, row.fga);
     row.ftm_fga = Number.isFinite(ftmFga) ? ftmFga : "";
-    if (Number.isFinite(row.three_pr) && Number.isFinite(row.ftm_fga)) {
-      row.three_pr_plus_ftm_fga = roundNumber(row.three_pr + row.ftm_fga, 3);
-    }
     row.ast_to = Number.isFinite(row.tov) && row.tov > 0 ? roundNumber(row.ast / row.tov, 2) : row.ast_to;
     row.blk_pf = Number.isFinite(row.pf) && row.pf > 0 ? roundNumber(row.blk / row.pf, 2) : row.blk_pf;
     row.stocks_pf = Number.isFinite(row.pf) && row.pf > 0 ? roundNumber(row.stocks / row.pf, 2) : row.stocks_pf;
@@ -7894,6 +7889,9 @@ function enhanceCollegeRow(row, datasetId) {
   populateAstTo(row);
   fillMissingRateStats(row, ["orb_pct", "drb_pct", "trb_pct", "ast_pct", "tov_pct", "stl_pct", "blk_pct", "usg_pct"]);
   scalePercentRatioColumns(row);
+  if (datasetId === "grassroots" && Number.isFinite(row.three_pr) && Number.isFinite(row.ftm_fga)) {
+    row.three_pr_plus_ftm_fga = roundNumber(row.three_pr + row.ftm_fga, 1);
+  }
   populateImpactMetrics(row);
 }
 
