@@ -3,6 +3,8 @@ const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
 const YEARLY_MANIFEST_FILE = path.join(__dirname, "yearly_event_exports", "cerebro_yearly_manifest_all.csv");
+const allSeasonsFile = path.join(__dirname, "data", "vendor", "grassroots_all_seasons.js");
+const MAX_GRASSROOTS_SCOPE_PART_BYTES = 40 * 1024 * 1024;
 const RAW_ROW_KEY_COLUMNS = [
   "event_name",
   "event_url",
@@ -29,7 +31,6 @@ const RAW_ROW_KEY_COLUMNS = [
   "FGS",
   "AST/G",
   "TOV",
-  "ATR",
   "REB/G",
   "BLK/G",
   "DSI",
@@ -249,23 +250,23 @@ function getStringValue(value) {
 
 function toNumber(value) {
   const text = String(value ?? "").trim().replace(/%$/, "");
-  if (!text || /^N\/A$/i.test(text)) return "";
+  if (!text || /^N\/A$/i.test(text)) return 0;
   const numeric = Number(text);
-  return Number.isFinite(numeric) ? numeric : "";
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function toPercentNumber(value) {
   const text = String(value ?? "").trim().replace(/%$/, "");
-  if (!text || /^N\/A$/i.test(text)) return "";
+  if (!text || /^N\/A$/i.test(text)) return 0;
   const numeric = Number(text);
-  return Number.isFinite(numeric) ? numeric : "";
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function parseHeight(value) {
   const text = String(value ?? "").trim();
-  if (!text || /^N\/A$/i.test(text)) return "";
+  if (!text || /^N\/A$/i.test(text)) return 0;
   const match = text.match(/^(\d+)\s*[-' ]\s*(\d{1,2})$/);
-  if (!match) return "";
+  if (!match) return 0;
   return Number(match[1]) * 12 + Number(match[2]);
 }
 
@@ -281,22 +282,22 @@ function parseSeason(eventName) {
     return Number.isFinite(inferredEnd) ? inferredEnd : startYear;
   }
   const years = text.match(/\b20\d{2}\b/g);
-  return years?.length ? Number(years[years.length - 1]) : "";
+  return years?.length ? Number(years[years.length - 1]) : 0;
 }
 
 function round(value, digits = 1) {
-  if (!Number.isFinite(value)) return "";
+  if (!Number.isFinite(value)) return 0;
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
 
 function roundGrassrootsCount(value) {
-  if (!Number.isFinite(value)) return "";
+  if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.round(value));
 }
 
 function roundGrassrootsPercent(value, digits = 1) {
-  if (!Number.isFinite(value)) return "";
+  if (!Number.isFinite(value)) return 0;
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
@@ -557,16 +558,24 @@ function deriveGrassrootsPercentileWeight(gp, min) {
 
 function buildGrassrootsCareerKey(row) {
   const playerName = normalizeGrassrootsNameKey(row.player_name || row.player);
-  return normalizeKey(playerName);
+  const classYear = Number.isFinite(row.class_year) ? Math.round(row.class_year) : "";
+  const heightKey = Number.isFinite(row.height_in)
+    ? Math.round(row.height_in / 2) * 2
+    : (Number.isFinite(row.inches) ? Math.round(row.inches / 2) * 2 : "");
+  const weightKey = Number.isFinite(row.weight_lb)
+    ? Math.round(row.weight_lb / 5) * 5
+    : (Number.isFinite(row.weight) ? Math.round(row.weight / 5) * 5 : "");
+  const posKey = normalizePosLabel(row.pos || row.pos_text);
+  return [playerName, classYear, heightKey, weightKey, normalizeKey(posKey)].map((value) => String(value ?? "").trim()).join("|");
 }
 
 function ratio(numerator, denominator) {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return "";
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return 0;
   return round((numerator / denominator) * 100, 1);
 }
 
 function perGameTotal(value, gp) {
-  if (!Number.isFinite(value) || !Number.isFinite(gp) || gp <= 0) return "";
+  if (!Number.isFinite(value) || !Number.isFinite(gp) || gp <= 0) return 0;
   return round(value * gp, 1);
 }
 
@@ -688,7 +697,7 @@ function inferGrassrootsClassYear(rawClass, season, ageRange) {
   const numericSeason = Number(season);
   const match = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
   const ageValue = match ? Number(match[1]) : Number.NaN;
-  if (!Number.isFinite(numericSeason) || !Number.isFinite(ageValue) || ageValue <= 0) return "";
+  if (!Number.isFinite(numericSeason) || !Number.isFinite(ageValue) || ageValue <= 0) return 0;
   return numericSeason + Math.max(0, 18 - ageValue);
 }
 
@@ -884,7 +893,7 @@ function buildGrassrootsStatSignature(row) {
     row.c_ram,
     row.usg_pct,
     row.psp,
-    row.atr,
+    row.stl_pf,
     row.dsi,
   ].map((value) => String(value ?? "")).join("\u0001");
 }
@@ -967,10 +976,10 @@ function aggregateGrassrootsRowGroup(groupRows) {
   aggregate.event_raw_name = Array.from(new Set(uniqueEventSources.map((value) => String(value ?? "").trim()).filter(Boolean))).join(" / ");
   aggregate.player_name = pickPreferredText(uniquePlayerNames) || latest.player_name || "";
   aggregate.player = aggregate.player_name;
-  aggregate.player_aliases = uniquePlayerNames.length > 1 ? Array.from(new Set(uniquePlayerNames)).join(" / ") : "";
+  aggregate.player_aliases = uniquePlayerNames.length > 1 ? Array.from(new Set(uniquePlayerNames)).join(" / ") : aggregate.player_name || "";
   aggregate.team_name = Array.from(new Set(uniqueTeamNames.map((value) => cleanGrassrootsTeamDisplayName(value)).filter(Boolean))).join(" / ") || latest.team_name || "";
   aggregate.team_full = Array.from(new Set(uniqueTeamFullNames.map((value) => String(value ?? "").trim()).filter(Boolean))).join(" / ") || latest.team_full || latest.team_name || "";
-  aggregate.team_aliases = uniqueTeamFullNames.length > 1 ? Array.from(new Set(uniqueTeamFullNames)).join(" / ") : "";
+  aggregate.team_aliases = uniqueTeamFullNames.length > 1 ? Array.from(new Set(uniqueTeamFullNames)).join(" / ") : aggregate.team_full || aggregate.team_name || "";
   aggregate.age_range = sortGrassrootsDisplayValues(uniqueAgeRanges, ["17U", "16U", "15U"]).join(" / ") || latest.age_range || "";
   aggregate.level = sortGrassrootsDisplayValues(uniqueAgeRanges, ["17U", "16U", "15U"]).join(" / ") || aggregate.level || aggregate.age_range || "";
   aggregate.setting = sortGrassrootsDisplayValues(uniqueSettings, ["HS", "AAU"]).join(" / ") || latest.setting || "";
@@ -980,21 +989,24 @@ function aggregateGrassrootsRowGroup(groupRows) {
   const weightValues = rows.map((row) => (Number.isFinite(row.weight_lb) ? row.weight_lb : Number.isFinite(row.weight) ? row.weight : Number.NaN)).filter(Number.isFinite);
   if (!Number.isFinite(aggregate.height_in) && heightValues.length) aggregate.height_in = heightValues[0];
   if (!Number.isFinite(aggregate.weight_lb) && weightValues.length) aggregate.weight_lb = weightValues[0];
+  aggregate.height_in = Number.isFinite(aggregate.height_in) ? aggregate.height_in : 0;
+  aggregate.weight_lb = Number.isFinite(aggregate.weight_lb) ? aggregate.weight_lb : 0;
   if (!getStringValue(aggregate.level).trim()) aggregate.level = aggregate.age_range || "";
-  aggregate.pos = uniquePositions.length ? uniquePositions.join(" / ") : normalizePosLabel(latest.pos || latest.pos_text || "") || "";
+  aggregate.pos = uniquePositions.length ? uniquePositions.join(" / ") : normalizePosLabel(latest.pos || latest.pos_text || "") || "UNK";
   aggregate.pos_text = aggregate.pos;
-  aggregate.event_aliases = aliasValues.join(" / ");
+  aggregate.event_aliases = aliasValues.join(" / ") || aggregate.event_name || aggregate.event_group || "";
   aggregate.event_merge_key = uniqueEventMergeKeys[0] || latest.event_merge_key || aggregate.event_name || "";
-  aggregate.player_search_text = uniquePlayerNames.join(" / ");
-  aggregate.team_search_text = uniqueTeamFullNames.join(" / ");
+  aggregate.player_search_text = uniquePlayerNames.join(" / ") || aggregate.player_name || "";
+  aggregate.team_search_text = uniqueTeamFullNames.join(" / ") || aggregate.team_full || aggregate.team_name || "";
   aggregate.career_player_key = Array.from(new Set(rows.map((row) => String(row.career_player_key || buildGrassrootsCareerKey(row) || "").trim()).filter(Boolean)))[0] || "";
-  aggregate.event_total_players = Math.max(...rows.map((row) => Number.isFinite(row.event_total_players) ? row.event_total_players : 0), 0) || "";
-  aggregate.page_index = latest.page_index || "";
+  aggregate.event_total_players = Math.max(...rows.map((row) => Number.isFinite(row.event_total_players) ? row.event_total_players : 0), 0);
+  aggregate.page_index = Number.isFinite(latest.page_index) ? latest.page_index : 0;
   aggregate.rank = rows
     .map((row) => Number(row.rank))
     .filter((value) => Number.isFinite(value))
-    .sort((left, right) => left - right)[0] ?? "";
-  aggregate.state = uniqueStates.join(" / ");
+    .sort((left, right) => left - right)[0] ?? 0;
+  aggregate.state = uniqueStates.join(" / ") || latest.state || latest.team_state || "Unknown";
+  aggregate.team_state = latest.team_state || aggregate.state || "Unknown";
   const usgRows = rows
     .map((row) => ({
       value: Number(row.usg_pct),
@@ -1010,34 +1022,35 @@ function aggregateGrassrootsRowGroup(groupRows) {
   }
   aggregate.gp = Math.round(aggregate.gp);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
-  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : "";
-  aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : "";
-  aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : "";
-  aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : "";
-  aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : "";
-  aggregate.trb_pg = aggregate.gp > 0 ? round(aggregate.trb / aggregate.gp, 1) : "";
-  aggregate.ast_pg = aggregate.gp > 0 ? round(aggregate.ast / aggregate.gp, 1) : "";
-  aggregate.tov_pg = aggregate.gp > 0 ? round(aggregate.tov / aggregate.gp, 1) : "";
-  aggregate.stl_pg = aggregate.gp > 0 ? round(aggregate.stl / aggregate.gp, 1) : "";
-  aggregate.blk_pg = aggregate.gp > 0 ? round(aggregate.blk / aggregate.gp, 1) : "";
-  aggregate.pf_pg = aggregate.gp > 0 ? round(aggregate.pf / aggregate.gp, 1) : "";
-  aggregate.stocks_pg = aggregate.gp > 0 ? round(aggregate.stocks / aggregate.gp, 1) : "";
-  aggregate.fg_pct = aggregate.fga > 0 ? round((aggregate.fgm / aggregate.fga) * 100, 1) : "";
-  aggregate["2p_pct"] = aggregate["2pa"] > 0 ? round((aggregate["2pm"] / aggregate["2pa"]) * 100, 1) : "";
-  aggregate.tp_pct = aggregate.tpa > 0 ? round((aggregate.tpm / aggregate.tpa) * 100, 1) : "";
-  aggregate.three_pr = aggregate.fga > 0 ? round((aggregate.tpa / aggregate.fga) * 100, 1) : "";
-  aggregate.ftm_fga = aggregate.fga > 0 ? round((aggregate.ftm / aggregate.fga) * 100, 1) : "";
+  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : 0;
+  aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : 0;
+  aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : 0;
+  aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : 0;
+  aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : 0;
+  aggregate.trb_pg = aggregate.gp > 0 ? round(aggregate.trb / aggregate.gp, 1) : 0;
+  aggregate.ast_pg = aggregate.gp > 0 ? round(aggregate.ast / aggregate.gp, 1) : 0;
+  aggregate.tov_pg = aggregate.gp > 0 ? round(aggregate.tov / aggregate.gp, 1) : 0;
+  aggregate.stl_pg = aggregate.gp > 0 ? round(aggregate.stl / aggregate.gp, 1) : 0;
+  aggregate.blk_pg = aggregate.gp > 0 ? round(aggregate.blk / aggregate.gp, 1) : 0;
+  aggregate.pf_pg = aggregate.gp > 0 ? round(aggregate.pf / aggregate.gp, 1) : 0;
+  aggregate.stocks_pg = aggregate.gp > 0 ? round(aggregate.stocks / aggregate.gp, 1) : 0;
+  aggregate.fg_pct = aggregate.fga > 0 ? round((aggregate.fgm / aggregate.fga) * 100, 1) : 0;
+  aggregate["2p_pct"] = aggregate["2pa"] > 0 ? round((aggregate["2pm"] / aggregate["2pa"]) * 100, 1) : 0;
+  aggregate.tp_pct = aggregate.tpa > 0 ? round((aggregate.tpm / aggregate.tpa) * 100, 1) : 0;
+  aggregate.three_pr = aggregate.fga > 0 ? round((aggregate.tpa / aggregate.fga) * 100, 1) : 0;
+  aggregate.ftm_fga = aggregate.fga > 0 ? round((aggregate.ftm / aggregate.fga) * 100, 1) : 0;
   aggregate.three_pr_plus_ftm_fga = Number.isFinite(aggregate.three_pr) && Number.isFinite(aggregate.ftm_fga)
     ? round(aggregate.three_pr + aggregate.ftm_fga, 1)
-    : "";
-  aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : "";
-  aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : "";
-  aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
-  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
-  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
-  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : "";
-  aggregate.tov_per40 = aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : "";
-  aggregate.pf_per40 = aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : "";
+    : 0;
+  aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : 0;
+  aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : 0;
+  aggregate.stl_pf = aggregate.pf > 0 ? round(aggregate.stl / aggregate.pf, 2) : 0;
+  aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : 0;
+  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : 0;
+  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : 0;
+  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : 0;
+  aggregate.tov_per40 = aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : 0;
+  aggregate.pf_per40 = aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : 0;
   aggregate.three_pe = aggregate.tpa;
   aggregate.fgs = aggregate.fgm;
   const aggregateClassYear = Number(aggregate.class_year);
@@ -1047,9 +1060,9 @@ function aggregateGrassrootsRowGroup(groupRows) {
     const inferredClassYear = rows
       .map((row) => Number(row.class_year))
       .find((value) => Number.isFinite(value) && value >= 1000);
-    aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : "";
+    aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : 0;
   }
-  aggregate.rank = aggregate.rank === "" ? null : aggregate.rank;
+  aggregate.rank = Number.isFinite(aggregate.rank) ? aggregate.rank : 0;
   return aggregate;
 }
 
@@ -1135,12 +1148,14 @@ function grassrootsDuplicateRowScore(row) {
 }
 
 function buildGrassrootsAttributeProfileKeys(row) {
+  const careerKey = getStringValue(row.career_player_key).trim();
   const player = normalizeGrassrootsNameKey(row.player_name || row.player);
   if (!player) return [];
   const season = getStringValue(row.season).trim();
   const age = getStringValue(row.age_range || row.level || "").trim();
   const classYear = getStringValue(row.class_year).trim();
   return Array.from(new Set([
+    careerKey,
     [player, season, age, classYear].join("|"),
     [player, season, age].join("|"),
     [player, classYear].join("|"),
@@ -1218,6 +1233,11 @@ function backfillGrassrootsPlayerAttributes(rows) {
       }
     }
   });
+
+  rows.forEach((row) => {
+    row.career_player_key = buildGrassrootsCareerKey(row);
+    row.player_cluster_key = buildGrassrootsPlayerClusterKey(row);
+  });
 }
 
 function pickPreferredGrassrootsDuplicateRow(rows) {
@@ -1249,6 +1269,7 @@ function dedupeGrassrootsExactDuplicateRows(rows) {
 
 function classifyGrassrootsCircuit(eventName) {
   const text = String(eventName ?? "");
+  const normalized = normalizeKey(text);
   if (/\bEYCL\b/i.test(text)) return "Nike EYCL";
   if (/scholastic/i.test(text)) return "Nike Scholastic";
   if (/extravaganza/i.test(text)) return "Nike Extravaganza";
@@ -1265,13 +1286,19 @@ function classifyGrassrootsCircuit(eventName) {
   if (/hoophall|hoop hall/i.test(text)) return "Hoophall";
   if (/montverde/i.test(text)) return "Montverde";
   if (/elite prep league|\bepl\b/i.test(text)) return "EPL";
-  if (/17u/i.test(text) && /general hs/i.test(text)) return "Other Amateur";
+  if (/\b(?:17u|16u|15u|14u|18u)\b/i.test(text) && !/\b(?:general hs|scholastic|hoophall|grind session|montverde|elite prep league|overtime elite|\bote\b)\b/i.test(text)) return "Other Amateur";
+  if (/\b(?:aau|club|phenom|gaso|ny2la|zero gravity|zg|made hoops|ballislife|select 40|shoe circuit|legion|grassroots|prep hoops|run 4 the roses)\b/i.test(normalized)) return "Other Amateur";
   return "";
 }
 
 function inferCircuit(sourceCircuit, row) {
   const circuit = classifyGrassrootsCircuit(row.event_name) || sourceCircuit || "General HS";
-  if (circuit === "General HS" && /17u/i.test(String(row.Team || ""))) return "Other Amateur";
+  if (circuit === "General HS") {
+    const text = `${String(row.event_name || "")} ${String(row.Team || "")}`;
+    if (/\b(?:17u|16u|15u|14u|18u)\b/i.test(text) || /\b(?:aau|club|phenom|gaso|ny2la|zero gravity|zg|made hoops|ballislife|select 40|shoe circuit|legion|grassroots|prep hoops|run 4 the roses)\b/i.test(normalizeKey(text))) {
+      return "Other Amateur";
+    }
+  }
   return circuit;
 }
 
@@ -1396,65 +1423,59 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
     if (hasValue && totalWeight > 0) aggregate[column] = round(weightedSum / totalWeight, 3);
   });
 
-  aggregate.season = latest.season || "";
-  aggregate.setting = scopeSpec.setting;
-  aggregate.rank = null;
-  if (scopeSpec.scope !== "single_year") {
-    const aggregateClassYear = Number(aggregate.class_year);
-    if (Number.isFinite(aggregateClassYear) && aggregateClassYear >= 1000) {
-      aggregate.class_year = aggregateClassYear;
-    } else {
-      const inferredClassYear = rows
-        .map((row) => Number(row.class_year))
-        .find((value) => Number.isFinite(value) && value >= 1000);
-      aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : "";
-    }
+  aggregate.season = scopeSpec.season || latest.season || "";
+  aggregate.setting = getStringValue(aggregate.setting).trim() || scopeSpec.setting || latest.setting || "";
+  aggregate.rank = Number.isFinite(aggregate.rank) ? aggregate.rank : 0;
+  const aggregateClassYear = Number(aggregate.class_year);
+  if (Number.isFinite(aggregateClassYear) && aggregateClassYear >= 1000) {
+    aggregate.class_year = aggregateClassYear;
+  } else {
+    const inferredClassYear = rows
+      .map((row) => Number(row.class_year))
+      .find((value) => Number.isFinite(value) && value >= 1000);
+    aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : 0;
   }
-  aggregate.pts_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pts / aggregate.min) * 40, 1) : "";
-  aggregate.trb_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.trb / aggregate.min) * 40, 1) : "";
-  aggregate.ast_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.ast / aggregate.min) * 40, 1) : "";
-  aggregate.tov_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : "";
-  aggregate.stl_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stl / aggregate.min) * 40, 1) : "";
-  aggregate.blk_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.blk / aggregate.min) * 40, 1) : "";
-  aggregate.pf_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : "";
-  aggregate.stocks_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stocks / aggregate.min) * 40, 1) : "";
+  aggregate.pts_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pts / aggregate.min) * 40, 1) : 0;
+  aggregate.trb_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.trb / aggregate.min) * 40, 1) : 0;
+  aggregate.ast_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.ast / aggregate.min) * 40, 1) : 0;
+  aggregate.tov_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : 0;
+  aggregate.stl_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stl / aggregate.min) * 40, 1) : 0;
+  aggregate.blk_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.blk / aggregate.min) * 40, 1) : 0;
+  aggregate.pf_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : 0;
+  aggregate.stocks_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.stocks / aggregate.min) * 40, 1) : 0;
   aggregate.gp = roundGrassrootsCount(aggregate.gp);
-  aggregate.min = Number.isFinite(aggregate.min) ? round(aggregate.min, 1) : "";
-  aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : "";
-  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : "";
-  aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : "";
-  aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : "";
-  aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : "";
-  aggregate.trb_pg = aggregate.gp > 0 ? round(aggregate.trb / aggregate.gp, 1) : "";
-  aggregate.ast_pg = aggregate.gp > 0 ? round(aggregate.ast / aggregate.gp, 1) : "";
-  aggregate.tov_pg = aggregate.gp > 0 ? round(aggregate.tov / aggregate.gp, 1) : "";
-  aggregate.stl_pg = aggregate.gp > 0 ? round(aggregate.stl / aggregate.gp, 1) : "";
-  aggregate.blk_pg = aggregate.gp > 0 ? round(aggregate.blk / aggregate.gp, 1) : "";
-  aggregate.pf_pg = aggregate.gp > 0 ? round(aggregate.pf / aggregate.gp, 1) : "";
-  aggregate.stocks_pg = aggregate.gp > 0 ? round(aggregate.stocks / aggregate.gp, 1) : "";
-  aggregate.fg_pct = aggregate.fga > 0 ? round((aggregate.fgm / aggregate.fga) * 100, 1) : "";
-  aggregate["2p_pct"] = aggregate["2pa"] > 0 ? round((aggregate["2pm"] / aggregate["2pa"]) * 100, 1) : "";
-  aggregate.tp_pct = aggregate.tpa > 0 ? round((aggregate.tpm / aggregate.tpa) * 100, 1) : "";
-  aggregate.three_pr = aggregate.fga > 0 ? round((aggregate.tpa / aggregate.fga) * 100, 1) : "";
-  aggregate.ftm_fga = aggregate.fga > 0 ? round((aggregate.ftm / aggregate.fga) * 100, 1) : "";
+  aggregate.min = round(aggregate.min, 1);
+  aggregate.mpg = aggregate.gp > 0 ? round(aggregate.min / aggregate.gp, 1) : 0;
+  aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : 0;
+  aggregate.tpm_pg = aggregate.gp > 0 ? round(aggregate.tpm / aggregate.gp, 1) : 0;
+  aggregate.tpa_pg = aggregate.gp > 0 ? round(aggregate.tpa / aggregate.gp, 1) : 0;
+  aggregate.ftm_pg = aggregate.gp > 0 ? round(aggregate.ftm / aggregate.gp, 1) : 0;
+  aggregate.trb_pg = aggregate.gp > 0 ? round(aggregate.trb / aggregate.gp, 1) : 0;
+  aggregate.ast_pg = aggregate.gp > 0 ? round(aggregate.ast / aggregate.gp, 1) : 0;
+  aggregate.tov_pg = aggregate.gp > 0 ? round(aggregate.tov / aggregate.gp, 1) : 0;
+  aggregate.stl_pg = aggregate.gp > 0 ? round(aggregate.stl / aggregate.gp, 1) : 0;
+  aggregate.blk_pg = aggregate.gp > 0 ? round(aggregate.blk / aggregate.gp, 1) : 0;
+  aggregate.pf_pg = aggregate.gp > 0 ? round(aggregate.pf / aggregate.gp, 1) : 0;
+  aggregate.stocks_pg = aggregate.gp > 0 ? round(aggregate.stocks / aggregate.gp, 1) : 0;
+  aggregate.fg_pct = aggregate.fga > 0 ? round((aggregate.fgm / aggregate.fga) * 100, 1) : 0;
+  aggregate["2p_pct"] = aggregate["2pa"] > 0 ? round((aggregate["2pm"] / aggregate["2pa"]) * 100, 1) : 0;
+  aggregate.tp_pct = aggregate.tpa > 0 ? round((aggregate.tpm / aggregate.tpa) * 100, 1) : 0;
+  aggregate.three_pr = aggregate.fga > 0 ? round((aggregate.tpa / aggregate.fga) * 100, 1) : 0;
+  aggregate.ftm_fga = aggregate.fga > 0 ? round((aggregate.ftm / aggregate.fga) * 100, 1) : 0;
   aggregate.three_pr_plus_ftm_fga = Number.isFinite(aggregate.three_pr) && Number.isFinite(aggregate.ftm_fga)
     ? round(aggregate.three_pr + aggregate.ftm_fga, 1)
-    : "";
-  aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : "";
-  aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : "";
-  aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
-  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
-  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
-  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : "";
+    : 0;
+  aggregate.ast_to = aggregate.tov > 0 ? round(aggregate.ast / aggregate.tov, 2) : 0;
+  aggregate.blk_pf = aggregate.pf > 0 ? round(aggregate.blk / aggregate.pf, 2) : 0;
+  aggregate.stl_pf = aggregate.pf > 0 ? round(aggregate.stl / aggregate.pf, 2) : 0;
+  aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : 0;
+  aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : 0;
+  aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : 0;
+  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : 0;
   aggregate.three_pe = aggregate.tpa;
   aggregate.adj_bpm = calculateGrassrootsAdjBpm(aggregate);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
   aggregate.fgs = aggregate.fgm;
-  if (scopeSpec.scope === "single_year") {
-    aggregate.event_aliases = "";
-    aggregate.player_aliases = "";
-    aggregate.team_aliases = "";
-  }
   aggregate._careerAggregate = true;
   aggregate._searchCacheKey = "";
   aggregate._searchHaystack = "";
@@ -1529,7 +1550,64 @@ function writeGrassrootsScopeBundle(scope, rows) {
       return bundleColumns.map((column) => csvEscapeGrassrootsValue(column, csvRow[column])).join(",");
     }),
   ].join("\n");
-  const output = [
+  const partTexts = splitGrassrootsScopeCsvText(csvText, MAX_GRASSROOTS_SCOPE_PART_BYTES);
+  if (partTexts.length <= 1) {
+    fs.writeFileSync(path.join(scopeBundleDir, `${scope}.js`), buildGrassrootsScopeBundleScript(scope, csvText), "utf8");
+    return;
+  }
+
+  const scopePartDir = path.join(scopeBundleDir, scope);
+  fs.mkdirSync(scopePartDir, { recursive: true });
+  const partUrls = [];
+  partTexts.forEach((partText, index) => {
+    const partName = `part-${String(index + 1).padStart(3, "0")}.js`;
+    const partPath = path.join(scopePartDir, partName);
+    const partUrl = `data/vendor/grassroots_scope_bundles/${scope}/${partName}`;
+    partUrls.push(partUrl);
+    fs.writeFileSync(partPath, buildGrassrootsScopePartScript(scope, partText), "utf8");
+  });
+
+  fs.writeFileSync(path.join(scopeBundleDir, `${scope}.js`), buildGrassrootsScopeManifestScript(scope, partUrls), "utf8");
+}
+
+function getGrassrootsScopeCsvColumns(scope) {
+  if (!["career_overall", "career_hs", "career_aau", "single_year"].includes(scope)) {
+    return columns;
+  }
+  return columns;
+}
+
+function splitGrassrootsScopeCsvText(csvText, maxBytes) {
+  const text = String(csvText || "");
+  if (!text) return [""];
+  const lines = text.split("\n");
+  if (lines.length <= 1) return [text];
+  const header = lines[0];
+  const parts = [];
+  let currentRows = [];
+  let currentBytes = 0;
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    const separatorBytes = currentRows.length ? 1 : 0;
+    const projected = currentBytes + separatorBytes + lineBytes;
+    if (currentRows.length && projected > maxBytes) {
+      parts.push(currentRows);
+      currentRows = [line];
+      currentBytes = lineBytes;
+      continue;
+    }
+    currentRows.push(line);
+    currentBytes = projected;
+  }
+  if (currentRows.length) parts.push(currentRows);
+  return parts.length
+    ? parts.map((rows, index) => (index === 0 ? [header, ...rows].join("\n") : rows.join("\n")))
+    : [header];
+}
+
+function buildGrassrootsScopeBundleScript(scope, csvText) {
+  return [
     "// Generated by build_grassroots_bundle.js",
     `// ${new Date().toISOString()}`,
     "(function(root) {",
@@ -1538,26 +1616,30 @@ function writeGrassrootsScopeBundle(scope, rows) {
     "})(typeof self !== \"undefined\" ? self : window);",
     "",
   ].join("\n");
-  fs.writeFileSync(path.join(scopeBundleDir, `${scope}.js`), output, "utf8");
 }
 
-function getGrassrootsScopeCsvColumns(scope) {
-  if (!["career_overall", "career_hs", "career_aau", "single_year"].includes(scope)) {
-    return columns;
-  }
-  const omitted = new Set([
-    "player_search_text",
-    "player_aliases",
-    "team_full",
-    "team_search_text",
-    "team_aliases",
-    "player_cluster_key",
-    "event_group",
-    "event_raw_name",
-    "event_aliases",
-    "career_player_key",
-  ]);
-  return columns.filter((column) => !omitted.has(column));
+function buildGrassrootsScopePartScript(scope, csvText) {
+  return [
+    "// Generated by build_grassroots_bundle.js",
+    `// ${new Date().toISOString()}`,
+    "(function(root) {",
+    "  root.GRASSROOTS_SCOPE_CSV_BUNDLES = root.GRASSROOTS_SCOPE_CSV_BUNDLES || {};",
+    `  root.GRASSROOTS_SCOPE_CSV_BUNDLES[${JSON.stringify(scope)}] = (root.GRASSROOTS_SCOPE_CSV_BUNDLES[${JSON.stringify(scope)}] || \"\") + ${JSON.stringify(csvText)};`,
+    "})(typeof self !== \"undefined\" ? self : window);",
+    "",
+  ].join("\n");
+}
+
+function buildGrassrootsScopeManifestScript(scope, partUrls) {
+  return [
+    "// Generated by build_grassroots_bundle.js",
+    `// ${new Date().toISOString()}`,
+    "(function(root) {",
+    "  root.GRASSROOTS_SCOPE_BUNDLE_PARTS = root.GRASSROOTS_SCOPE_BUNDLE_PARTS || {};",
+    `  root.GRASSROOTS_SCOPE_BUNDLE_PARTS[${JSON.stringify(scope)}] = ${JSON.stringify(partUrls)};`,
+    "})(typeof self !== \"undefined\" ? self : window);",
+    "",
+  ].join("\n");
 }
 
 function loadManifestSourceFiles() {
@@ -1620,11 +1702,11 @@ function mapRow(row, circuit) {
   const fga = shotTotals.fga;
   const tpa = shotTotals.tpa;
   const twoPa = shotTotals.twoPa;
-  const twoPct = twoPa > 0 ? round((twoPm / twoPa) * 100, 1) : "";
-  const ftmPg = gpCount > 0 ? round(ftm / gpCount, 1) : "";
-  const ftmFga = fga > 0 ? round((ftm / fga) * 100, 1) : "";
-  const threePr = fga > 0 ? round((tpa / fga) * 100, 1) : "";
-  const threePrPlusFtmFga = Number.isFinite(threePr) && Number.isFinite(ftmFga) ? round(threePr + ftmFga, 1) : "";
+  const twoPct = twoPa > 0 ? round((twoPm / twoPa) * 100, 1) : 0;
+  const ftmPg = gpCount > 0 ? round(ftm / gpCount, 1) : 0;
+  const ftmFga = fga > 0 ? round((ftm / fga) * 100, 1) : 0;
+  const threePr = fga > 0 ? round((tpa / fga) * 100, 1) : 0;
+  const threePrPlusFtmFga = Number.isFinite(threePr) && Number.isFinite(ftmFga) ? round(threePr + ftmFga, 1) : 0;
   const trbPg = toNumber(row["REB/G"]);
   const astPg = toNumber(row["AST/G"]);
   const tovPg = toNumber(row.TOV);
@@ -1637,9 +1719,9 @@ function mapRow(row, circuit) {
   const stl = roundGrassrootsCount(perGameTotal(stlPg, gpCount));
   const blk = roundGrassrootsCount(perGameTotal(blkPg, gpCount));
   const pf = roundGrassrootsCount(perGameTotal(pfPg, gpCount));
-  const stocks = Number.isFinite(stl) && Number.isFinite(blk) ? roundGrassrootsCount(stl + blk) : "";
-  const stocksPg = Number.isFinite(stlPg) && Number.isFinite(blkPg) ? round(stlPg + blkPg, 1) : "";
-  const min = Number.isFinite(mpg) && Number.isFinite(gp) ? round(mpg * gp, 1) : "";
+  const stocks = Number.isFinite(stl) && Number.isFinite(blk) ? roundGrassrootsCount(stl + blk) : 0;
+  const stocksPg = Number.isFinite(stlPg) && Number.isFinite(blkPg) ? round(stlPg + blkPg, 1) : 0;
+  const min = Number.isFinite(mpg) && Number.isFinite(gp) ? round(mpg * gp, 1) : 0;
   const percentileWeight = deriveGrassrootsPercentileWeight(gpCount, min);
   const heightIn = parseHeight(row.HT);
   const weightLb = toNumber(row.WT);
@@ -1659,19 +1741,18 @@ function mapRow(row, circuit) {
   });
   const careerPlayerKey = buildGrassrootsCareerKey({
     player_name: row.Player || "",
+    class_year: classYear,
     height_in: heightIn,
     weight_lb: weightLb,
-    state,
-    team_state: state,
     pos,
   });
   const playerSearchText = String(row.Player || "").trim();
   const teamSearchText = rawTeamName;
   const circuitLabel = (circuit === "General HS" && /17u/i.test(rawTeamName)) ? "Other Amateur" : circuit;
-  const setting = getGrassrootsSettingForCircuit(circuit);
+  const setting = getGrassrootsSettingForCircuit(circuitLabel);
   const eventDisplay = eventInfo.specific || rawEventName || "";
   const eventGroup = eventInfo.family || eventDisplay || rawEventName || "";
-  const eventAlias = Array.from(new Set([eventDisplay, eventGroup].map((value) => String(value ?? "").trim()).filter(Boolean))).join(" / ");
+  const eventAlias = Array.from(new Set([eventDisplay, eventGroup, rawEventName].map((value) => String(value ?? "").trim()).filter(Boolean))).join(" / ");
   const teamRawName = rawTeamName;
 
   return {
@@ -1682,15 +1763,15 @@ function mapRow(row, circuit) {
     setting,
     event_name: eventDisplay,
     event_group: eventGroup,
-    event_raw_name: eventDisplay,
+    event_raw_name: rawEventName,
     event_aliases: eventAlias,
     event_merge_key: eventInfo.mergeKey || normalizeKey(eventDisplay),
     event_variant: eventInfo.isVariant,
+    player_cluster_key: playerClusterKey,
     player_search_text: playerSearchText,
     team_search_text: teamSearchText,
-    player_aliases: "",
-    team_aliases: "",
-    player_cluster_key: playerClusterKey,
+    player_aliases: playerSearchText || row.Player || "",
+    team_aliases: teamRawName || teamDisplayName || "",
     event_url: row.event_url || "",
     event_total_players: toNumber(row.event_total_players),
     page_index: toNumber(row.page_index),
@@ -1724,8 +1805,8 @@ function mapRow(row, circuit) {
     tpm,
     tpa,
     tpm_pg: tpmPg,
-    tpa_pg: gpCount > 0 ? round(tpa / gpCount, 1) : "",
-    three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : "",
+    tpa_pg: gpCount > 0 ? round(tpa / gpCount, 1) : 0,
+    three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : 0,
     ftm,
     ftm_pg: ftmPg,
     ftm_fga: ftmFga,
@@ -1737,7 +1818,6 @@ function mapRow(row, circuit) {
     ast_pg: astPg,
     tov,
     tov_pg: tovPg,
-    atr: toNumber(row.ATR),
     trb,
     trb_pg: trbPg,
     blk,
@@ -1749,29 +1829,30 @@ function mapRow(row, circuit) {
     pf_pg: pfPg,
     stocks,
     stocks_pg: stocksPg,
-    ast_stl_pg: gpCount > 0 ? round((ast + stl) / gpCount, 1) : "",
-    pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : "",
-    trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
-    ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : "",
-    ast_stl_per40: Number.isFinite(min) && min > 0 ? round(((ast + stl) / min) * 40, 1) : "",
-    tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
-    stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : "",
-    blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : "",
-    ast_to: tov > 0 ? round(ast / tov, 2) : "",
-    blk_pf: pf > 0 ? round(blk / pf, 2) : "",
-    stocks_pf: pf > 0 ? round(stocks / pf, 2) : "",
-    pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : "",
-    stocks_per40: Number.isFinite(min) && min > 0 ? round((stocks / min) * 40, 1) : "",
+    ast_stl_pg: gpCount > 0 ? round((ast + stl) / gpCount, 1) : 0,
+    pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : 0,
+    trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : 0,
+    ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : 0,
+    ast_stl_per40: Number.isFinite(min) && min > 0 ? round(((ast + stl) / min) * 40, 1) : 0,
+    tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : 0,
+    stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : 0,
+    blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : 0,
+    ast_to: tov > 0 ? round(ast / tov, 2) : 0,
+    blk_pf: pf > 0 ? round(blk / pf, 2) : 0,
+    stl_pf: pf > 0 ? round(stl / pf, 2) : 0,
+    stocks_pf: pf > 0 ? round(stocks / pf, 2) : 0,
+    pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : 0,
+    stocks_per40: Number.isFinite(min) && min > 0 ? round((stocks / min) * 40, 1) : 0,
     adj_bpm: calculateGrassrootsAdjBpm({
-      pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : "",
-      two_pa_per40: Number.isFinite(min) && min > 0 ? round((twoPa / min) * 40, 1) : "",
-      three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : "",
-      ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : "",
-      tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : "",
-      stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : "",
-      blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : "",
-      pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : "",
-      trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
+      pts_per40: Number.isFinite(min) && min > 0 ? round((pts / min) * 40, 1) : 0,
+      two_pa_per40: Number.isFinite(min) && min > 0 ? round((twoPa / min) * 40, 1) : 0,
+      three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : 0,
+      ast_per40: Number.isFinite(min) && min > 0 ? round((ast / min) * 40, 1) : 0,
+      tov_per40: Number.isFinite(min) && min > 0 ? round((tov / min) * 40, 1) : 0,
+      stl_per40: Number.isFinite(min) && min > 0 ? round((stl / min) * 40, 1) : 0,
+      blk_per40: Number.isFinite(min) && min > 0 ? round((blk / min) * 40, 1) : 0,
+      pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : 0,
+      trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : 0,
       height_in: heightIn,
       pos,
       pos_text: pos,
@@ -1788,6 +1869,7 @@ function mapRow(row, circuit) {
       blk,
       trb,
       pf,
+      stl_pf: pf > 0 ? round(stl / pf, 2) : 0,
     }),
     percentile_weight: percentileWeight,
   };
@@ -1888,7 +1970,6 @@ const columns = [
   "tov",
   "tov_pg",
   "ast_to",
-  "atr",
   "trb",
   "trb_pg",
   "blk",
@@ -1899,6 +1980,7 @@ const columns = [
   "pf",
   "pf_pg",
   "blk_pf",
+  "stl_pf",
   "stocks_pf",
   "stocks",
   "stocks_pg",
@@ -1919,7 +2001,8 @@ const columns = [
 const rowsBySeason = new Map();
 rows.forEach((row) => {
   const season = String(row.season ?? "").trim();
-  if (!season) return;
+  const seasonNumber = Number(season);
+  if (!season || !Number.isFinite(seasonNumber) || seasonNumber <= 0) return;
   if (!rowsBySeason.has(season)) rowsBySeason.set(season, []);
   rowsBySeason.get(season).push(row);
 });
@@ -1959,6 +2042,19 @@ fs.writeFileSync(
   "utf8"
 );
 
+fs.writeFileSync(
+  allSeasonsFile,
+  [
+    "// Generated by build_grassroots_bundle.js",
+    `// ${new Date().toISOString()}`,
+    "(function(root) {",
+    "  root.GRASSROOTS_ALL_CSV = root.GRASSROOTS_ALL_CSV || \"\";",
+    "})(typeof self !== \"undefined\" ? self : window);",
+    "",
+  ].join("\n"),
+  "utf8"
+);
+
 seasons.forEach((season) => {
   const seasonRows = rowsBySeason.get(season) || [];
   const csvText = [
@@ -1986,5 +2082,6 @@ const circuitCounts = rows.reduce((acc, row) => {
 
 console.log(`Wrote ${yearManifestFile}`);
 console.log(`Wrote ${yearChunkDir}`);
+console.log(`Wrote ${allSeasonsFile}`);
 console.log(`Rows: ${rows.length}`);
 console.log(JSON.stringify(circuitCounts));
