@@ -224,6 +224,25 @@ function csvEscape(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function sanitizeGrassrootsPosValue(value) {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return "";
+  if (isGrassrootsPosPlaceholder(text)) return "";
+  return normalizePosLabel(text);
+}
+
+function csvEscapeGrassrootsValue(column, value) {
+  if (column === "pos" || column === "pos_text") {
+    return csvEscape(sanitizeGrassrootsPosValue(value));
+  }
+  return csvEscape(value);
+}
+
+function isGrassrootsPosPlaceholder(value) {
+  const text = String(value ?? "").trim().toUpperCase();
+  return Boolean(text) && text.replace(/[^A-Z]/g, "") === "NA";
+}
+
 function getStringValue(value) {
   return value == null ? "" : String(value);
 }
@@ -252,8 +271,17 @@ function parseHeight(value) {
 
 function parseSeason(eventName) {
   const text = String(eventName ?? "");
-  const match = text.match(/\b(\d{4})\b/);
-  return match ? Number(match[1]) : "";
+  const match = text.match(/\b(20\d{2})(?:\s*[-/]\s*(\d{2}|20\d{2}))?\b/);
+  if (match) {
+    const startYear = Number(match[1]);
+    const endYear = match[2];
+    if (!endYear) return startYear;
+    if (endYear.length === 4) return Number(endYear);
+    const inferredEnd = Number(`${match[1].slice(0, 2)}${endYear}`);
+    return Number.isFinite(inferredEnd) ? inferredEnd : startYear;
+  }
+  const years = text.match(/\b20\d{2}\b/g);
+  return years?.length ? Number(years[years.length - 1]) : "";
 }
 
 function round(value, digits = 1) {
@@ -610,7 +638,10 @@ function isLikelyStateAbbreviation(value) {
 }
 
 function normalizePosLabel(value) {
-  const text = String(value ?? "").toUpperCase();
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return "";
+  const compact = text.replace(/[^A-Z]/g, "");
+  if (!compact || compact === "NA") return "";
   if (/\bPOINT GUARD\b/.test(text)) return "PG";
   if (/\bPG\b|PURE PG/.test(text)) return "PG";
   if (/\bSHOOTING GUARD\b/.test(text)) return "SG";
@@ -648,7 +679,12 @@ function parseAgeRange(eventName, teamName) {
 
 function inferGrassrootsClassYear(rawClass, season, ageRange) {
   const numericClass = Number(rawClass);
-  if (Number.isFinite(numericClass) && numericClass >= 1000) return numericClass;
+  if (Number.isFinite(numericClass) && numericClass >= 1000) {
+    if (numericClass === 2034) return 2024;
+    if (numericClass === 2035) return 2025;
+    if (numericClass === 2206) return 2026;
+    return numericClass;
+  }
   const numericSeason = Number(season);
   const match = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
   const ageValue = match ? Number(match[1]) : Number.NaN;
@@ -864,6 +900,10 @@ function aggregateGrassrootsRowGroup(groupRows) {
   const playerNames = rows.map((row) => row.player_name);
   const teamNames = rows.map((row) => row.team_name);
   const teamFullNames = rows.map((row) => row.team_full || row.team_name);
+  const ageRangeValues = rows.map((row) => row.age_range).filter(Boolean);
+  const settingValues = rows.map((row) => row.setting).filter(Boolean);
+  const eventUrls = rows.map((row) => row.event_url).filter(Boolean);
+  const circuitValues = rows.map((row) => row.circuit).filter(Boolean);
   const stateValues = rows.map((row) => row.state).filter(Boolean);
   const positions = rows.map((row) => row.pos).filter(Boolean);
   const uniqueEventNames = Array.from(new Set(eventNames.filter(Boolean)));
@@ -873,6 +913,10 @@ function aggregateGrassrootsRowGroup(groupRows) {
   const uniquePlayerNames = Array.from(new Set(playerNames.filter(Boolean)));
   const uniqueTeamNames = Array.from(new Set(teamNames.filter(Boolean)));
   const uniqueTeamFullNames = Array.from(new Set(teamFullNames.filter(Boolean)));
+  const uniqueAgeRanges = Array.from(new Set(ageRangeValues.filter(Boolean)));
+  const uniqueSettings = Array.from(new Set(settingValues.filter(Boolean)));
+  const uniqueEventUrls = Array.from(new Set(eventUrls.filter(Boolean)));
+  const uniqueCircuits = Array.from(new Set(circuitValues.filter(Boolean)));
   const uniqueStates = Array.from(new Set(stateValues.filter(Boolean)));
   const uniquePositions = Array.from(new Set(positions.map((value) => normalizePosLabel(value)).filter(Boolean)));
 
@@ -895,7 +939,7 @@ function aggregateGrassrootsRowGroup(groupRows) {
     "pf",
     "stocks",
   ];
-  const aggregate = latest ? Object.create(latest) : {};
+  const aggregate = latest ? { ...latest } : {};
   sumColumns.forEach((column) => {
     const total = rows.reduce((sum, row) => sum + (Number.isFinite(row[column]) ? row[column] : 0), 0);
     aggregate[column] = column === "min" ? round(total, 1) : roundGrassrootsCount(total);
@@ -927,7 +971,17 @@ function aggregateGrassrootsRowGroup(groupRows) {
   aggregate.team_name = Array.from(new Set(uniqueTeamNames.map((value) => cleanGrassrootsTeamDisplayName(value)).filter(Boolean))).join(" / ") || latest.team_name || "";
   aggregate.team_full = Array.from(new Set(uniqueTeamFullNames.map((value) => String(value ?? "").trim()).filter(Boolean))).join(" / ") || latest.team_full || latest.team_name || "";
   aggregate.team_aliases = uniqueTeamFullNames.length > 1 ? Array.from(new Set(uniqueTeamFullNames)).join(" / ") : "";
-  aggregate.pos = uniquePositions.length ? uniquePositions.join(" / ") : latest.pos || "";
+  aggregate.age_range = sortGrassrootsDisplayValues(uniqueAgeRanges, ["17U", "16U", "15U"]).join(" / ") || latest.age_range || "";
+  aggregate.level = sortGrassrootsDisplayValues(uniqueAgeRanges, ["17U", "16U", "15U"]).join(" / ") || aggregate.level || aggregate.age_range || "";
+  aggregate.setting = sortGrassrootsDisplayValues(uniqueSettings, ["HS", "AAU"]).join(" / ") || latest.setting || "";
+  aggregate.event_url = uniqueEventUrls.join(" / ") || latest.event_url || "";
+  aggregate.circuit = sortGrassrootsDisplayValues(uniqueCircuits, Array.from(circuitOrder.keys())).join(" / ") || latest.circuit || "";
+  const heightValues = rows.map((row) => (Number.isFinite(row.height_in) ? row.height_in : Number.isFinite(row.inches) ? row.inches : Number.NaN)).filter(Number.isFinite);
+  const weightValues = rows.map((row) => (Number.isFinite(row.weight_lb) ? row.weight_lb : Number.isFinite(row.weight) ? row.weight : Number.NaN)).filter(Number.isFinite);
+  if (!Number.isFinite(aggregate.height_in) && heightValues.length) aggregate.height_in = heightValues[0];
+  if (!Number.isFinite(aggregate.weight_lb) && weightValues.length) aggregate.weight_lb = weightValues[0];
+  if (!getStringValue(aggregate.level).trim()) aggregate.level = aggregate.age_range || "";
+  aggregate.pos = uniquePositions.length ? uniquePositions.join(" / ") : normalizePosLabel(latest.pos || latest.pos_text || "") || "";
   aggregate.pos_text = aggregate.pos;
   aggregate.event_aliases = aliasValues.join(" / ");
   aggregate.event_merge_key = uniqueEventMergeKeys[0] || latest.event_merge_key || aggregate.event_name || "";
@@ -941,6 +995,19 @@ function aggregateGrassrootsRowGroup(groupRows) {
     .filter((value) => Number.isFinite(value))
     .sort((left, right) => left - right)[0] ?? "";
   aggregate.state = uniqueStates.join(" / ");
+  const usgRows = rows
+    .map((row) => ({
+      value: Number(row.usg_pct),
+      weight: Math.max(getMinutesValue(row), 1),
+    }))
+    .filter((item) => Number.isFinite(item.value) && item.weight > 0);
+  if (usgRows.length) {
+    const usgWeight = usgRows.reduce((sum, item) => sum + item.weight, 0);
+    if (usgWeight > 0) {
+      const usgWeighted = usgRows.reduce((sum, item) => sum + (item.value * item.weight), 0);
+      aggregate.usg_pct = round(usgWeighted / usgWeight, 3);
+    }
+  }
   aggregate.gp = Math.round(aggregate.gp);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
   aggregate.pts_pg = aggregate.gp > 0 ? round(aggregate.pts / aggregate.gp, 1) : "";
@@ -968,10 +1035,20 @@ function aggregateGrassrootsRowGroup(groupRows) {
   aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
   aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
   aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
+  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : "";
   aggregate.tov_per40 = aggregate.min > 0 ? round((aggregate.tov / aggregate.min) * 40, 1) : "";
   aggregate.pf_per40 = aggregate.min > 0 ? round((aggregate.pf / aggregate.min) * 40, 1) : "";
   aggregate.three_pe = aggregate.tpa;
   aggregate.fgs = aggregate.fgm;
+  const aggregateClassYear = Number(aggregate.class_year);
+  if (Number.isFinite(aggregateClassYear) && aggregateClassYear >= 1000) {
+    aggregate.class_year = aggregateClassYear;
+  } else {
+    const inferredClassYear = rows
+      .map((row) => Number(row.class_year))
+      .find((value) => Number.isFinite(value) && value >= 1000);
+    aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : "";
+  }
   aggregate.rank = aggregate.rank === "" ? null : aggregate.rank;
   return aggregate;
 }
@@ -1055,6 +1132,92 @@ function grassrootsDuplicateRowScore(row) {
   const teamScore = String(row.team_full || row.team_name || "").length;
   const eventScore = String(row.event_name || row.event_group || "").length;
   return (fields * 10) + playerScore + teamScore + eventScore;
+}
+
+function buildGrassrootsAttributeProfileKeys(row) {
+  const player = normalizeGrassrootsNameKey(row.player_name || row.player);
+  if (!player) return [];
+  const season = getStringValue(row.season).trim();
+  const age = getStringValue(row.age_range || row.level || "").trim();
+  const classYear = getStringValue(row.class_year).trim();
+  return Array.from(new Set([
+    [player, season, age, classYear].join("|"),
+    [player, season, age].join("|"),
+    [player, classYear].join("|"),
+    player,
+  ].filter(Boolean)));
+}
+
+function backfillGrassrootsPlayerAttributes(rows) {
+  const profiles = new Map();
+
+  rows.forEach((row) => {
+    const score = grassrootsDuplicateRowScore(row);
+    const height = Number.isFinite(row.height_in) ? row.height_in : Number.isFinite(row.inches) ? row.inches : Number.NaN;
+    const weight = Number.isFinite(row.weight_lb) ? row.weight_lb : Number.isFinite(row.weight) ? row.weight : Number.NaN;
+    const pos = normalizePosLabel(row.pos || row.pos_text);
+    buildGrassrootsAttributeProfileKeys(row).forEach((key) => {
+      const current = profiles.get(key) || {
+        heightScore: Number.NEGATIVE_INFINITY,
+        weightScore: Number.NEGATIVE_INFINITY,
+        posScore: Number.NEGATIVE_INFINITY,
+      };
+      if (Number.isFinite(height) && score > current.heightScore) {
+        current.heightScore = score;
+        current.heightRow = row;
+      }
+      if (Number.isFinite(weight) && score > current.weightScore) {
+        current.weightScore = score;
+        current.weightRow = row;
+      }
+      if (pos && score > current.posScore) {
+        current.posScore = score;
+        current.posRow = row;
+      }
+      profiles.set(key, current);
+    });
+    row.pos = pos;
+    row.pos_text = pos;
+  });
+
+  rows.forEach((row) => {
+    const keys = buildGrassrootsAttributeProfileKeys(row);
+    if (!keys.length) return;
+
+    if (!Number.isFinite(row.height_in)) {
+      for (const key of keys) {
+        const source = profiles.get(key)?.heightRow;
+        const height = Number.isFinite(source?.height_in) ? source.height_in : Number.isFinite(source?.inches) ? source.inches : Number.NaN;
+        if (Number.isFinite(height)) {
+          row.height_in = height;
+          break;
+        }
+      }
+    }
+
+    if (!Number.isFinite(row.weight_lb)) {
+      for (const key of keys) {
+        const source = profiles.get(key)?.weightRow;
+        const weight = Number.isFinite(source?.weight_lb) ? source.weight_lb : Number.isFinite(source?.weight) ? source.weight : Number.NaN;
+        if (Number.isFinite(weight)) {
+          row.weight_lb = weight;
+          break;
+        }
+      }
+    }
+
+    if (!normalizePosLabel(row.pos || row.pos_text)) {
+      for (const key of keys) {
+        const source = profiles.get(key)?.posRow;
+        const pos = normalizePosLabel(source?.pos || source?.pos_text);
+        if (pos) {
+          row.pos = pos;
+          row.pos_text = pos;
+          break;
+        }
+      }
+    }
+  });
 }
 
 function pickPreferredGrassrootsDuplicateRow(rows) {
@@ -1218,7 +1381,7 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
 
   numericColumns.forEach((column) => {
     if (sumColumns.has(column) || latestColumns.has(column)) return;
-    if (/(_pg$|_per40$|_pct$|_pr$|_pf$|_to$|_bpm$|_pe$|_weight$|_percentile$|_rate$)/i.test(column)) return;
+    if (/(_pg$|_per40$|_pr$|_pf$|_to$|_bpm$|_pe$|_weight$|_percentile$|_rate$)/i.test(column)) return;
     let totalWeight = 0;
     let weightedSum = 0;
     let hasValue = false;
@@ -1233,9 +1396,20 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
     if (hasValue && totalWeight > 0) aggregate[column] = round(weightedSum / totalWeight, 3);
   });
 
-  aggregate.season = scopeSpec.season || latest.season || "";
+  aggregate.season = latest.season || "";
   aggregate.setting = scopeSpec.setting;
   aggregate.rank = null;
+  if (scopeSpec.scope !== "single_year") {
+    const aggregateClassYear = Number(aggregate.class_year);
+    if (Number.isFinite(aggregateClassYear) && aggregateClassYear >= 1000) {
+      aggregate.class_year = aggregateClassYear;
+    } else {
+      const inferredClassYear = rows
+        .map((row) => Number(row.class_year))
+        .find((value) => Number.isFinite(value) && value >= 1000);
+      aggregate.class_year = Number.isFinite(inferredClassYear) ? inferredClassYear : "";
+    }
+  }
   aggregate.pts_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.pts / aggregate.min) * 40, 1) : "";
   aggregate.trb_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.trb / aggregate.min) * 40, 1) : "";
   aggregate.ast_per40 = Number.isFinite(aggregate.min) && aggregate.min > 0 ? round((aggregate.ast / aggregate.min) * 40, 1) : "";
@@ -1271,6 +1445,7 @@ function finalizeGrassrootsScopeAggregate(aggregate, groupRows, scopeSpec) {
   aggregate.stocks_pf = aggregate.pf > 0 ? round(aggregate.stocks / aggregate.pf, 2) : "";
   aggregate.ast_stl_pg = aggregate.gp > 0 ? round((aggregate.ast + aggregate.stl) / aggregate.gp, 1) : "";
   aggregate.ast_stl_per40 = aggregate.min > 0 ? round(((aggregate.ast + aggregate.stl) / aggregate.min) * 40, 1) : "";
+  aggregate.three_pa_per40 = aggregate.min > 0 ? round((aggregate.tpa / aggregate.min) * 40, 1) : "";
   aggregate.three_pe = aggregate.tpa;
   aggregate.adj_bpm = calculateGrassrootsAdjBpm(aggregate);
   aggregate.percentile_weight = deriveGrassrootsPercentileWeight(aggregate.gp, aggregate.min);
@@ -1347,7 +1522,12 @@ function writeGrassrootsScopeBundle(scope, rows) {
   const bundleColumns = getGrassrootsScopeCsvColumns(scope);
   const csvText = [
     bundleColumns.join(","),
-    ...rows.map((row) => bundleColumns.map((column) => csvEscape(row[column])).join(",")),
+    ...rows.map((row) => {
+      const csvRow = { ...row };
+      if (isGrassrootsPosPlaceholder(csvRow.pos)) csvRow.pos = "";
+      if (isGrassrootsPosPlaceholder(csvRow.pos_text)) csvRow.pos_text = "";
+      return bundleColumns.map((column) => csvEscapeGrassrootsValue(column, csvRow[column])).join(",");
+    }),
   ].join("\n");
   const output = [
     "// Generated by build_grassroots_bundle.js",
@@ -1466,6 +1646,7 @@ function mapRow(row, circuit) {
   const season = parseSeason(rawEventName);
   const ageRange = parseAgeRange(rawEventName, row.Team);
   const classYear = inferGrassrootsClassYear(row.Class, season, ageRange);
+  const pos = normalizePosLabel(row.POS);
   const rank = toNumber(row.Rank);
   const playerClusterKey = buildGrassrootsPlayerClusterKey({
     player_name: row.Player || "",
@@ -1482,7 +1663,7 @@ function mapRow(row, circuit) {
     weight_lb: weightLb,
     state,
     team_state: state,
-    pos: row.POS || "",
+    pos,
   });
   const playerSearchText = String(row.Player || "").trim();
   const teamSearchText = rawTeamName;
@@ -1496,6 +1677,7 @@ function mapRow(row, circuit) {
   return {
     season,
     age_range: ageRange,
+    level: ageRange,
     circuit: circuitLabel,
     setting,
     event_name: eventDisplay,
@@ -1519,7 +1701,7 @@ function mapRow(row, circuit) {
     state,
     team_state: state,
     career_player_key: careerPlayerKey,
-    pos: row.POS || "",
+    pos,
     class_year: classYear,
     height_in: heightIn,
     weight_lb: weightLb,
@@ -1543,6 +1725,7 @@ function mapRow(row, circuit) {
     tpa,
     tpm_pg: tpmPg,
     tpa_pg: gpCount > 0 ? round(tpa / gpCount, 1) : "",
+    three_pa_per40: Number.isFinite(min) && min > 0 ? round((tpa / min) * 40, 1) : "",
     ftm,
     ftm_pg: ftmPg,
     ftm_fga: ftmFga,
@@ -1590,8 +1773,8 @@ function mapRow(row, circuit) {
       pf_per40: Number.isFinite(min) && min > 0 ? round((pf / min) * 40, 1) : "",
       trb_per40: Number.isFinite(min) && min > 0 ? round((trb / min) * 40, 1) : "",
       height_in: heightIn,
-      pos: row.POS || "",
-      pos_text: row.POS || "",
+      pos,
+      pos_text: pos,
       two_p_pct: twoPct,
       tp_pct: tpPct,
       ft_pct: toNumber(row["FT%"]),
@@ -1621,6 +1804,8 @@ if (manifestSourceFiles.length) {
 } else {
   console.warn("No yearly manifest found; grassroots build will be empty.");
 }
+
+backfillGrassrootsPlayerAttributes(rawRows);
 
 const dedupedRawRows = dedupeGrassrootsExactDuplicateRows(rawRows);
 const rows = mergeGrassrootsRows(dedupedRawRows);
@@ -1699,8 +1884,10 @@ const columns = [
   "three_pe",
   "ast",
   "ast_pg",
+  "ast_stl_pg",
   "tov",
   "tov_pg",
+  "ast_to",
   "atr",
   "trb",
   "trb_pg",
@@ -1723,6 +1910,8 @@ const columns = [
   "blk_per40",
   "pf_per40",
   "stocks_per40",
+  "ast_stl_per40",
+  "three_pa_per40",
   "adj_bpm",
   "percentile_weight",
 ];
@@ -1774,7 +1963,11 @@ seasons.forEach((season) => {
   const seasonRows = rowsBySeason.get(season) || [];
   const csvText = [
     columns.join(","),
-    ...seasonRows.map((row) => columns.map((column) => csvEscape(row[column])).join(",")),
+    ...seasonRows.map((row) => {
+      const csvRow = { ...row };
+      if (isGrassrootsPosPlaceholder(csvRow.pos)) csvRow.pos = "";
+      return columns.map((column) => csvEscapeGrassrootsValue(column, csvRow[column])).join(",");
+    }),
   ].join("\n");
   const output = [
     "// Generated by build_grassroots_bundle.js",

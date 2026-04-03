@@ -16,7 +16,7 @@ const MINUTES_DEFAULT = 400;
 const TABLE_FRAME_LIMIT = 2580;
 const COLOR_SCALE_MAX_ROWS = 8000;
 const STATUS_ANNOTATIONS_SCRIPT = "data/vendor/status_annotations.js";
-const APP_BUILD_VERSION = "20260331-grassroots-v5";
+const APP_BUILD_VERSION = "20260402-grassroots-v13";
 const SCRIPT_CACHE_BUST = APP_BUILD_VERSION;
 const SHARED_SINGLE_FILTERS = [
   {
@@ -847,7 +847,7 @@ const DATASETS = {
     searchColumns: ["player", "team_name", "team_search_text"],
     sortBy: "pts_per40",
     sortDir: "desc",
-    demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
+    demoColumns: ["pos", "class_year", "height_in", "weight_lb"],
     demoFilterColumns: [],
     groups: [
       { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "adjoe", "adrtg", "porpag", "dporpag", "per", "fic", "ppr", "nba_career_epm"], defaultColumns: ["gp", "min", "mpg", "adjoe", "adrtg", "porpag", "dporpag"] },
@@ -1187,13 +1187,13 @@ const DATASETS = {
     defaultAllYears: false,
     autoHydrateGrassrootsYears: false,
     minuteDefault: 200,
-    demoColumns: ["pos", "class_year", "height_in", "weight_lb", "gp", "min", "mpg"],
+    demoColumns: ["pos", "class_year", "height_in", "weight_lb"],
     demoFilterColumns: ["height_in", "weight_lb", "gp", "min", "mpg"],
     groups: [
-      { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "event_name", "circuit", "team_name", "pos"], defaultColumns: ["pos"] },
-      { id: "summary", label: "Summary", columns: ["gp", "min", "mpg", "pts", "pts_pg", "trb", "trb_pg", "ast", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "ram", "c_ram", "psp", "three_pe", "adj_bpm"] },
-      { id: "ratios", label: "Ratios", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"] },
+      { id: "meta", label: "Info", columns: ["setting", "state", "age_range", "class_year", "height_in", "weight_lb", "event_name", "circuit", "team_name", "pos", "gp", "min", "mpg"], defaultColumns: ["pos", "gp", "min", "mpg"] },
+      { id: "summary", label: "Summary", columns: ["dsi", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"], defaultColumns: ["dsi", "ram", "c_ram", "psp", "three_pe", "adj_bpm", "usg_pct"] },
       { id: "per_game", label: "Per Game", columns: ["pts_pg", "trb_pg", "ast_pg", "ast_stl_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg", "tpm_pg", "tpa_pg", "ftm_pg"], defaultColumns: ["pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "pf_pg", "stocks_pg"] },
+      { id: "ratios", label: "Ratios", columns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"], defaultColumns: ["fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "ast_to", "blk_pf", "stocks_pf"] },
       { id: "per40", label: "Per 40", columns: ["pts_per40", "trb_per40", "ast_per40", "ast_stl_per40", "tov_per40", "stl_per40", "blk_per40", "pf_per40", "stocks_per40", "three_pa_per40"], defaultColumns: [] },
       { id: "totals", label: "Totals", columns: ["pts", "trb", "ast", "tov", "stl", "blk", "pf", "stocks", "fgm", "fga", "2pm", "2pa", "tpm", "tpa", "ftm"], defaultColumns: ["pts", "trb", "ast", "stl", "blk", "pf", "fgm", "fga", "2pm", "tpm", "ftm"] },
     ],
@@ -1208,7 +1208,7 @@ const DATASETS = {
       { id: "circuit", label: "Circuit", column: "circuit", sort: GRASSROOTS_CIRCUIT_ORDER },
       { id: "pos", label: "Pos", column: "pos", sort: ["PG", "G", "SG", "G/F", "F", "SF", "PF", "C"] },
     ],
-    defaultVisible: ["rank", "season", "circuit", "player_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "atr", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
+    defaultVisible: ["rank", "season", "circuit", "player_name", "pos", "height_in", "gp", "min", "mpg", "pts_pg", "trb_pg", "ast_pg", "stl_pg", "blk_pg", "fg_pct", "2p_pct", "tp_pct", "three_pr", "ftm_fga", "three_pr_plus_ftm_fga", "tpm_pg", "ftm_pg", "usg_pct", "ram", "c_ram", "psp", "three_pe", "dsi", "blk_pf", "stocks_pf", "adj_bpm"],
     labels: {
       rank: "",
       season: "Year",
@@ -1272,7 +1272,6 @@ const DATASETS = {
       c_ram: "C-RAM",
       psp: "PSP",
       usg_pct: "USG%",
-      atr: "A:TO",
       dsi: "DSI",
       blk_pf: "BLK/PF",
       stocks_pf: "Stocks/PF",
@@ -2223,12 +2222,16 @@ function companionNbaCareerScore(row) {
   return firstFinite(row?.mp, 0) + (firstFinite(row?.ewins, 0) * 100);
 }
 
-function loadScriptOnce(src) {
+function getCacheBustedScriptUrl(src) {
   const url = new URL(src, window.location.href);
   if (url.origin === window.location.origin) {
     url.searchParams.set("v", String(SCRIPT_CACHE_BUST));
   }
-  const cacheBustedSrc = url.href;
+  return url.href;
+}
+
+function loadScriptOnce(src) {
+  const cacheBustedSrc = getCacheBustedScriptUrl(src);
 
   if (appState.scriptLoads.has(cacheBustedSrc)) {
     return appState.scriptLoads.get(cacheBustedSrc);
@@ -2427,9 +2430,9 @@ function getGrassrootsScopeWorkerUrl() {
       for (let index = 0; index < text.length; index += 1) {
         const char = text[index];
         const next = text[index + 1];
-        if (char === "\"") {
-          if (inQuotes && next === "\"") {
-            current += "\"";
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            current += '"';
             index += 1;
           } else {
             inQuotes = !inQuotes;
@@ -2441,8 +2444,8 @@ function getGrassrootsScopeWorkerUrl() {
           current = "";
           continue;
         }
-        if (!inQuotes && (char === "\n" || char === "\r")) {
-          if (char === "\r" && next === "\n") index += 1;
+        if (!inQuotes && (char === '\\n' || char === '\\r')) {
+          if (char === '\\r' && next === '\\n') index += 1;
           row.push(current);
           current = "";
           if (row.some((cell) => cell !== "")) rows.push(row);
@@ -2476,6 +2479,7 @@ function loadGrassrootsScopeRowsInWorker(scope, src) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(getGrassrootsScopeWorkerUrl());
     const cleanup = () => worker.terminate();
+    const cacheBustedSrc = getCacheBustedScriptUrl(src);
     worker.onmessage = (event) => {
       const data = event.data || {};
       if (data.ok) {
@@ -2490,7 +2494,7 @@ function loadGrassrootsScopeRowsInWorker(scope, src) {
       cleanup();
       reject(error instanceof ErrorEvent ? new Error(error.message) : new Error(String(error?.message || error)));
     };
-    worker.postMessage({ scope, src });
+    worker.postMessage({ scope, src: cacheBustedSrc });
   });
 }
 
@@ -4679,7 +4683,10 @@ function ordinalToClass(value) {
 }
 
 function normalizePosLabel(value) {
-  const text = getStringValue(value).toUpperCase();
+  const text = getStringValue(value).trim().toUpperCase();
+  if (!text) return "";
+  const compact = text.replace(/[^A-Z]/g, "");
+  if (!compact || compact === "NA") return "";
   if (/\bPOINT GUARD\b/.test(text)) return "PG";
   if (/\bPG\b|PURE PG/.test(text)) return "PG";
   if (/\bSHOOTING GUARD\b/.test(text)) return "SG";
@@ -5638,6 +5645,9 @@ function getCareerFilteredRows(dataset, state, rows) {
   const numericKey = serializeRangeFilters(dataset.meta.numericColumns || [], state.numericFilters);
   const key = [
     getDisplayRowsCacheKey(dataset, state),
+    getStringValue(state.team),
+    serializeSingleFilterState(dataset, state),
+    serializeMultiFilterState(dataset, state),
     searchKey,
     demoKey,
     numericKey,
@@ -5646,47 +5656,21 @@ function getCareerFilteredRows(dataset, state, rows) {
     getStringValue(state.sortBlankMode),
   ].join("||");
   if (cache.careerFilteredRowsKey === key) return cache.careerFilteredRows;
-
-  const searchClauses = parseSearchTerms(state.search);
-  let searchRows = Array.isArray(rows) ? rows : [];
-  if (searchClauses.length) {
-    if (dataset.id === "grassroots") {
-      searchRows = getGrassrootsSearchRows(dataset, searchClauses, searchRows);
-    } else {
-      searchRows = searchRows.filter((row) => {
-        const haystack = getRowSearchHaystack(dataset, row);
-        return searchClauses.some((clause) => matchesSearchPhrase(haystack, clause));
-      });
+  let filtered = getFilterContextRows(dataset, state, { rows, ignoreYears: true });
+  if (dataset?.id === "grassroots" && state?.extraSelects?.view_mode === "career") {
+    const availableYears = getAvailableYears(dataset).map((year) => getStringValue(year).trim()).filter(Boolean);
+    const selectedYears = Array.from(state?.years || []).map((year) => getStringValue(year).trim()).filter(Boolean);
+    const allSelected = availableYears.length
+      && selectedYears.length === availableYears.length
+      && selectedYears.every((year) => availableYears.includes(year));
+    if (!allSelected && selectedYears.length) {
+      const selectedYearSet = new Set(selectedYears);
+      filtered = filtered.filter((row) => selectedYearSet.has(getStringValue(row.class_year)));
     }
   }
-
-  const filtered = searchRows.filter((row) => {
-    for (const item of dataset.meta.demoFilterMeta) {
-      const filter = state.demoFilters[item.column];
-      if (!filter) continue;
-      if (!matchesDemoFilter(row[item.column], filter, item.type)) return false;
-    }
-
-    for (const [column, filter] of Object.entries(state.numericFilters)) {
-      const hasMin = filter?.min !== "";
-      const hasMax = filter?.max !== "";
-      if (!hasMin && !hasMax) continue;
-      const rawValue = getRowColumnValue(dataset, row, column);
-      const numericValue = typeof rawValue === "number"
-        ? rawValue
-        : (getStringValue(rawValue).trim() === "" ? Number.NaN : Number(rawValue));
-      if (!Number.isFinite(numericValue)) return false;
-      if (hasMin && numericValue < Number(filter.min)) return false;
-      if (hasMax && numericValue > Number(filter.max)) return false;
-    }
-
-    return true;
-  });
-
-  const sorted = sortRows(filtered, state.sortBy, state.sortDir, dataset, state.sortBlankMode);
   cache.careerFilteredRowsKey = key;
-  cache.careerFilteredRows = sorted;
-  return sorted;
+  cache.careerFilteredRows = filtered;
+  return filtered;
 }
 
 function getFilterContextRows(dataset, state, options = {}) {
@@ -5808,6 +5792,18 @@ function getRawFilterContextRows(dataset, state, options = {}) {
     ? { ...state, extraSelects: { ...state.extraSelects, view_mode: "player" } }
     : state;
   return getFilterContextRows(dataset, rawState, { ...options, rows: options.rows || dataset.rows });
+}
+
+function getGrassrootsCareerYearLabel(dataset, state) {
+  if (dataset?.id !== "grassroots" || state?.extraSelects?.view_mode !== "career") return "All Years";
+  const availableYears = getAvailableYears(dataset).map((year) => getStringValue(year).trim()).filter(Boolean);
+  const selectedYears = Array.from(state?.years || []).map((year) => getStringValue(year).trim()).filter(Boolean);
+  if (!selectedYears.length) return "none";
+  const allSelected = availableYears.length
+    && selectedYears.length === availableYears.length
+    && selectedYears.every((year) => availableYears.includes(year));
+  if (allSelected) return "All Years";
+  return selectedYears.sort(compareYears).join(" / ");
 }
 
 function parseSearchTerms(value) {
@@ -6065,6 +6061,7 @@ function buildCareerRows(dataset, state) {
     ignoreSearch: true,
     ignoreDemoFilters: true,
     ignoreNumericFilters: true,
+    ignoreYears: true,
   });
   const grouped = new Map();
   scopedRows.forEach((row) => {
@@ -6466,7 +6463,12 @@ function getGrassrootsPosFamily(rowsOrRow) {
 
 function inferGrassrootsClassYear(classYear, season, ageRange) {
   const numericClass = Number(classYear);
-  if (Number.isFinite(numericClass) && numericClass >= 1000) return numericClass;
+  if (Number.isFinite(numericClass) && numericClass >= 1000) {
+    if (numericClass === 2034) return 2024;
+    if (numericClass === 2035) return 2025;
+    if (numericClass === 2206) return 2026;
+    return numericClass;
+  }
   const numericSeason = Number(season);
   const ageMatch = String(ageRange ?? "").match(/\b(\d{1,2})U\b/i);
   const ageValue = ageMatch ? Number(ageMatch[1]) : Number.NaN;
@@ -6497,7 +6499,7 @@ function grassrootsAliasRowScore(row) {
 function aggregateCareerRows(dataset, rows) {
   if (rows.length <= 1) {
     const latest = rows[0] || {};
-    const aggregate = latest ? Object.create(latest) : {};
+    const aggregate = latest ? { ...latest } : {};
     aggregate.rank = null;
     aggregate._careerAggregate = true;
     aggregate._searchCacheKey = "";
@@ -6513,6 +6515,8 @@ function aggregateCareerRows(dataset, rows) {
   const teamSearchValues = new Map();
   const eventValues = new Map();
   const eventGroupValues = new Map();
+  const ageRangeValues = new Set();
+  const eventUrlValues = new Set();
   const circuitValues = new Map();
   const settingValues = new Map();
   const positionValues = new Map();
@@ -6535,6 +6539,10 @@ function aggregateCareerRows(dataset, rows) {
       }
     }
     if (dataset.id === "grassroots") {
+      const ageRangeText = getStringValue(row.age_range).trim();
+      if (ageRangeText) ageRangeValues.add(ageRangeText);
+      const eventUrlText = getStringValue(row.event_url).trim();
+      if (eventUrlText) eventUrlValues.add(eventUrlText);
       const posText = getStringValue(row.pos_text || row.pos).trim();
       if (posText) positionValues.set(normalizeKey(posText), normalizePosLabel(posText));
       const eventText = getStringValue(row.event_name).trim();
@@ -6557,7 +6565,7 @@ function aggregateCareerRows(dataset, rows) {
     defaultWeights[index] = Math.max(firstFinite(row.total_poss, estimatedPossessions(row), getMinutesValue(row), row.gp, 1), 1);
   });
   const plans = getCareerAggregationPlans(dataset);
-  const aggregate = latest ? Object.create(latest) : {};
+  const aggregate = latest ? { ...latest } : {};
   const mergedTeams = sortGrassrootsDisplayValues(teamSearchValues.values(), []);
   const mergedEvents = sortGrassrootsEventValues(eventValues.values());
   const mergedEventGroups = sortGrassrootsEventValues(eventGroupValues.values());
@@ -6638,6 +6646,13 @@ function aggregateCareerRows(dataset, rows) {
   aggregate[dataset.yearColumn] = latest[dataset.yearColumn];
   aggregate[dataset.teamColumn] = dataset.id === "grassroots" ? mergedTeams.join(" / ") : latest[dataset.teamColumn];
   if (dataset.id === "grassroots") {
+    if (Array.from(ageRangeValues).length && !getStringValue(aggregate.age_range).trim()) {
+      aggregate.age_range = Array.from(ageRangeValues).sort(compareFilterValues).join(" / ");
+    }
+    if (!getStringValue(aggregate.level).trim()) aggregate.level = aggregate.age_range || "";
+    if (Array.from(eventUrlValues).length && !getStringValue(aggregate.event_url).trim()) {
+      aggregate.event_url = Array.from(eventUrlValues).sort(compareFilterValues).join(" / ");
+    }
     if (mergedPositions.length) {
       const mergedPositionText = mergedPositions.join(" / ");
       aggregate.pos = mergedPositionText;
@@ -6964,10 +6979,10 @@ function getColumnWidth(column, dataset) {
   if (baseColumn === "setting") return 62;
   if (baseColumn === "state") return 44;
   if (dataset.id === "grassroots" && baseColumn === "circuit") return 92;
-  if (baseColumn === "ftm_fga") return 54;
+  if (baseColumn === "ftm_fga") return 50;
   if (baseColumn === "ast_stl_pg" || baseColumn === "ast_stl_per40") return 58;
   if (baseColumn === "blk_pf" || baseColumn === "stocks_pf") return 54;
-  if (baseColumn === "three_pr_plus_ftm_fga") return 92;
+  if (baseColumn === "three_pr_plus_ftm_fga") return 72;
   if (/player/i.test(baseColumn)) return 148;
   if (dataset.id === "grassroots" && (baseColumn === dataset.teamColumn || /team/i.test(baseColumn))) return 84;
   if (baseColumn === "competition_label") return 94;
@@ -7443,9 +7458,9 @@ function updateSummary(dataset, state, filtered) {
     return;
   }
   const careerMode = state?.extraSelects?.view_mode === "career";
-  const selectedYears = careerMode
-    ? "All Years"
-    : (state.years.size ? Array.from(state.years).sort((a, b) => compareYears(b, a)).join(" / ") : "none");
+  const selectedYears = dataset?.id === "grassroots" && careerMode
+    ? getGrassrootsCareerYearLabel(dataset, state)
+    : (careerMode ? "All Years" : (state.years.size ? Array.from(state.years).sort((a, b) => compareYears(b, a)).join(" / ") : "none"));
   const search = state.search.trim();
   elements.filtersSummary.textContent = `Years: ${selectedYears} | Team: ${state.team === "all" ? "all" : state.team} | Search: ${search || "none"}`;
   elements.resultsCount.textContent = "";
@@ -7455,23 +7470,32 @@ function updateSummary(dataset, state, filtered) {
 function renderFinderBar(dataset, state) {
   if (!elements.finderTitle || !elements.finderQuery || !elements.yearQuickSelect) return;
   const careerMode = state?.extraSelects?.view_mode === "career";
-  const selectedYears = careerMode ? [] : Array.from(state.years).sort(compareYears);
-  const singleYear = careerMode ? "all" : (selectedYears.length === 1 ? selectedYears[0] : "all");
+  const grassrootsCareerMode = dataset?.id === "grassroots" && careerMode;
+  const selectedYears = Array.from(state.years).sort(compareYears);
+  const singleYear = grassrootsCareerMode
+    ? (selectedYears.length === 1 ? selectedYears[0] : "all")
+    : (careerMode ? "all" : (selectedYears.length === 1 ? selectedYears[0] : "all"));
   const years = getAvailableYears(dataset);
-  elements.yearQuickSelect.innerHTML = careerMode
+  elements.yearQuickSelect.innerHTML = careerMode && !grassrootsCareerMode
     ? '<option value="all">All years</option>'
     : [
       '<option value="all">All years</option>',
       ...years.map((year) => `<option value="${escapeAttribute(year)}"${singleYear === year ? " selected" : ""}>${escapeHtml(year)}</option>`),
     ].join("");
-  elements.yearQuickSelect.value = careerMode ? "all" : singleYear;
-  elements.yearQuickSelect.disabled = careerMode || Boolean(state?._grassrootsLoadingScope);
-  const yearLabel = singleYear === "all" ? "All Years" : singleYear;
+  elements.yearQuickSelect.value = careerMode && !grassrootsCareerMode ? "all" : singleYear;
+  elements.yearQuickSelect.disabled = Boolean(state?._grassrootsLoadingScope) || (careerMode && !grassrootsCareerMode);
+  const yearLabel = grassrootsCareerMode ? (singleYear === "all" ? "All Years" : singleYear) : "All Years";
   elements.finderTitle.textContent = `${yearLabel} ${dataset.navLabel} Player Finder`;
   elements.finderQuery.textContent = buildFinderQueryText(dataset, state);
 
   elements.yearQuickSelect.onchange = async () => {
     const value = elements.yearQuickSelect.value;
+    if (grassrootsCareerMode) {
+      state.years = value === "all" ? new Set(years) : new Set([value]);
+      resetUiCaches(state);
+      renderCurrentDataset();
+      return;
+    }
     const targetYears = value === "all" ? years : [value];
     try {
       await ensureDatasetYearsLoaded(dataset, targetYears);
